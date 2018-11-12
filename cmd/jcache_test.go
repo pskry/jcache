@@ -71,7 +71,7 @@ func systemTest(t *testing.T, fqcn string, pStdout, pStderr func(string) (string
 	compileCalled := false
 
 	// first run. must call compile
-	stdout, stderr, exit := mainExitCode(
+	jc, err := newCache(
 		cacheDir,
 		func(name string, args ...string) (fOut string, fErr string, exit int, err error) {
 			compileCalled = true
@@ -83,6 +83,8 @@ func systemTest(t *testing.T, fqcn string, pStdout, pStderr func(string) (string
 		"-d", outDir,
 		"../test/testdata/java/"+fqcn+".java",
 	)
+	failOnErr(err)
+	stdout, stderr, exit := jc.mainExitCode()
 
 	desc, ok := pStdout(stdout)
 	if !ok {
@@ -108,7 +110,7 @@ func systemTest(t *testing.T, fqcn string, pStdout, pStderr func(string) (string
 	// delete all output
 	os.RemoveAll(outDir)
 
-	stdout, stderr, exit = mainExitCode(
+	jc, err = newCache(
 		cacheDir,
 		func(name string, args ...string) (fOut string, fErr string, exit int, err error) {
 			panic(fmt.Sprintf("compile called! %s(%v)", name, args))
@@ -119,6 +121,8 @@ func systemTest(t *testing.T, fqcn string, pStdout, pStderr func(string) (string
 		"-d", outDir,
 		"../test/testdata/java/"+fqcn+".java",
 	)
+	failOnErr(err)
+	stdout, stderr, exit = jc.mainExitCode()
 
 	desc, ok = pStdout(stdout)
 	if !ok {

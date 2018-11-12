@@ -21,7 +21,9 @@ var javacDur time.Duration
 
 func main() {
 	start := time.Now()
-	stdout, stderr, exit := mainExitCode(basePath, jcache.Command, os.Args...)
+	jc, err := newCache(basePath, jcache.Command, os.Args...)
+	failOnErr(err)
+	stdout, stderr, exit := jc.mainExitCode()
 	elapsed := time.Since(start)
 	fmt.Fprintf(os.Stderr, "Note: jCache finished in %+v\n", elapsed)
 	if javacDur == 0 {
@@ -46,6 +48,45 @@ type CompilerInfo struct {
 	Exit int
 }
 
+type jCache struct {
+	basePath         string
+	compileFunc      CompileFunc
+	osArgs           []string
+	args             jcache.ParsedArgs
+	cachePath        string
+	sourceInfoPath   string
+	compilerInfoPath string
+	dstCachePath     string
+}
+
+func newCache(basePath string, compileFunc CompileFunc, osArgs ...string) (*jCache, error) {
+	args, err := jcache.ParseArgs(osArgs)
+	if err != nil {
+		return nil, err
+	}
+
+	cachePath := filepath.Join(basePath, args.UUID)
+	dstCachePath := filepath.Join(cachePath, "classes")
+
+	err = os.MkdirAll(dstCachePath, os.ModePerm)
+	if err != nil {
+		return nil, err
+	}
+
+	jc := &jCache{
+		basePath:         basePath,
+		compileFunc:      compileFunc,
+		osArgs:           osArgs,
+		args:             args,
+		cachePath:        cachePath,
+		sourceInfoPath:   filepath.Join(cachePath, "source-info.json"),
+		compilerInfoPath: filepath.Join(cachePath, "compiler-info.json"),
+		dstCachePath:     dstCachePath,
+	}
+
+	return jc, nil
+}
+
 type CompileFunc func(string, ...string) (string, string, int, error)
 
 var l jcache.Logger
@@ -56,36 +97,22 @@ func init() {
 	l = ll
 }
 
-func mainExitCode(basePath string, compileFunc CompileFunc, osArgs ...string) (string, string, int) {
+func (j *jCache) mainExitCode() (string, string, int) {
 	start := time.Now()
 
-	l.Info("%v", osArgs)
+	l.Info("%v", j.osArgs)
 	defer func() {
 		elapsed := time.Since(start)
 		l.Info("jCache finished in %+v\n.\n.\n.", elapsed)
 	}()
 
-	args, err := jcache.ParseArgs(osArgs)
-	failOnErr(err)
-
-	cachePath := filepath.Join(basePath, args.UUID)
-	sourceInfoPath := filepath.Join(cachePath, "source-info.json")
-	compilerInfoPath := filepath.Join(cachePath, "compiler-info.json")
-	dstCachePath := filepath.Join(cachePath, "classes")
-
-	err = os.MkdirAll(dstCachePath, os.ModePerm)
-	failOnErr(err)
-
-	if needCompilation(cachePath, sourceInfoPath) {
+	if j.needCompilation() {
 		l.Info("cache-miss")
 
-		err = os.MkdirAll(cachePath, os.ModePerm)
+		err := writeSourceInfo(j.args, j.sourceInfoPath)
 		failOnErr(err)
 
-		err = writeSourceInfo(args, sourceInfoPath)
-		failOnErr(err)
-
-		repackArgs := len(args.FlatArgs) > 0
+		repackArgs := len(j.args.FlatArgs) > 0
 
 		var stdout, stderr string
 		var exit int
@@ -93,7 +120,7 @@ func mainExitCode(basePath string, compileFunc CompileFunc, osArgs ...string) (s
 		javacStart := time.Now()
 		if repackArgs {
 			dOption := -1
-			for i, arg := range args.FlatArgs {
+			for i, arg := range j.args.FlatArgs {
 				if arg == "-d" {
 					dOption = i
 					break
@@ -102,27 +129,27 @@ func mainExitCode(basePath string, compileFunc CompileFunc, osArgs ...string) (s
 
 			if dOption < 0 {
 				// we'll need to add our out-dir
-				newArgs := make([]string, len(args.FlatArgs)+2)
+				newArgs := make([]string, len(j.args.FlatArgs)+2)
 				newArgs[0] = "-d"
-				newArgs[1] = dstCachePath
-				for i := 0; i < len(args.FlatArgs); i++ {
-					newArgs[i+2] = args.FlatArgs[i]
+				newArgs[1] = j.dstCachePath
+				for i := 0; i < len(j.args.FlatArgs); i++ {
+					newArgs[i+2] = j.args.FlatArgs[i]
 				}
-				args.FlatArgs = newArgs
+				j.args.FlatArgs = newArgs
 			} else {
-				args.FlatArgs[dOption+1] = dstCachePath
+				j.args.FlatArgs[dOption+1] = j.dstCachePath
 			}
 
 			fArg, err := ioutil.TempFile("", "jcache_args")
 			failOnErr(err)
-			for _, arg := range args.FlatArgs {
+			for _, arg := range j.args.FlatArgs {
 				fArg.WriteString("\"" + arg + "\"\n")
 			}
 			fArg.Close()
 			defer os.RemoveAll(fArg.Name())
-			stdout, stderr, exit, err = compileFunc(args.CompilerPath, "@"+fArg.Name())
+			stdout, stderr, exit, err = j.compileFunc(j.args.CompilerPath, "@"+fArg.Name())
 		} else {
-			stdout, stderr, exit, err = compileFunc(args.CompilerPath, args.OriginalArgs...)
+			stdout, stderr, exit, err = j.compileFunc(j.args.CompilerPath, j.args.OriginalArgs...)
 		}
 		failOnErr(err)
 		javacDur = time.Since(javacStart)
@@ -134,75 +161,95 @@ func mainExitCode(basePath string, compileFunc CompileFunc, osArgs ...string) (s
 			Exit: exit,
 		}
 
-		err = writeCompilerInfo(ci, compilerInfoPath)
+		err = writeCompilerInfo(ci, j.compilerInfoPath)
 		failOnErr(err)
 	} else {
 		l.Info("cache-hit")
 	}
 
-	copiedFiles := 0
-	copiedBytes := int64(0)
 	// here we'll just copy
-	err = filepath.Walk(dstCachePath, func(path string, info os.FileInfo, err error) error {
-		failOnErr(err)
-		if info.IsDir() {
-			return nil
-		}
-
-		if !info.Mode().IsRegular() {
-			return fmt.Errorf("not a regular file: %s", path)
-		}
-
-		rel, err := filepath.Rel(dstCachePath, path)
-		failOnErr(err)
-		dstPath := filepath.Join(args.DstDir, rel)
-
-		err = os.MkdirAll(filepath.Dir(dstPath), os.ModePerm)
-		failOnErr(err)
-
-		source, err := os.Open(path)
-		failOnErr(err)
-		defer source.Close()
-
-		destination, err := os.Create(dstPath)
-		failOnErr(err)
-		defer destination.Close()
-
-		written, err := io.Copy(destination, source)
-		failOnErr(err)
-
-		if written != info.Size() {
-			return fmt.Errorf("partial copy (%d/%d bytes): %s", written, info.Size(), path)
-		}
-
-		copiedBytes += written
-		copiedFiles++
-
-		return nil
-	})
+	nFiles, nBytes, err := j.copyCachedFiles()
 	failOnErr(err)
 
-	l.Info("served %d bytes compiled from %d source files", copiedBytes, copiedFiles)
+	l.Info("served %d bytes compiled from %d source files", nBytes, nFiles)
 
-	ci, err := readCompilerInfo(compilerInfoPath)
+	// replay compiler stdout, stderr and exit
+	ci, err := readCompilerInfo(j.compilerInfoPath)
 	failOnErr(err)
 
 	return ci.Out, ci.Err, ci.Exit
 }
 
-func needCompilation(cachePath, sourceInfoPath string) bool {
-	if _, err := os.Stat(cachePath); os.IsNotExist(err) {
+func (j *jCache) copyCachedFiles() (nFiles int, nBytes int64, err error) {
+	err = filepath.Walk(j.dstCachePath, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if info.IsDir() {
+			// continue walking.
+			return nil
+		}
+
+		if !info.Mode().IsRegular() {
+			return fmt.Errorf("file not regular: %s", path)
+		}
+
+		rel, err := filepath.Rel(j.dstCachePath, path)
+		if err != nil {
+			return err
+		}
+
+		dstPath := filepath.Join(j.args.DstDir, rel)
+
+		err = os.MkdirAll(filepath.Dir(dstPath), os.ModePerm)
+		if err != nil {
+			return err
+		}
+
+		source, err := os.Open(path)
+		if err != nil {
+			return err
+		}
+		defer source.Close()
+
+		destination, err := os.Create(dstPath)
+		if err != nil {
+			return err
+		}
+		defer destination.Close()
+
+		w, err := io.Copy(destination, source)
+		if err != nil {
+			return err
+		}
+
+		if w != info.Size() {
+			return fmt.Errorf("partial copy (%d/%d bytes): %s", w, info.Size(), path)
+		}
+
+		nBytes += w
+		nFiles++
+
+		return nil
+	})
+
+	return
+}
+
+func (j *jCache) needCompilation() bool {
+	if _, err := os.Stat(j.cachePath); os.IsNotExist(err) {
 		l.Info("cache-path does not exist")
 		return true
 	}
 
-	if _, err := os.Stat(sourceInfoPath); os.IsNotExist(err) {
+	if _, err := os.Stat(j.sourceInfoPath); os.IsNotExist(err) {
 		l.Info("source-info-path does not exist")
 		return true
 	}
 
 	// see if any modified.....
-	infoSlice, err := readSourceInfo(sourceInfoPath)
+	infoSlice, err := readSourceInfo(j.sourceInfoPath)
 	if err != nil {
 		s := fmt.Sprintf("Failed to read source-info.json. Recompiling. %+v", err)
 		fmt.Fprint(os.Stderr, s)

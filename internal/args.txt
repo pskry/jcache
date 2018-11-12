@@ -23,7 +23,6 @@
 "/home/baeda/dev/jcache/src/main/java/com/github/baeda/jcache/io/IO.java"
 "/home/baeda/dev/jcache/src/main/java/com/github/baeda/jcache/JavacInvokation.java"
 "/home/baeda/dev/jcache/src/main/java/com/github/baeda/jcache/ExternalBoundryInvocation.java"
-"ClassOnBasePath.java"
 "-s"
 "/home/baeda/dev/jcache/target/generated-sources/annotations"
 "-g"
