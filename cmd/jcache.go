@@ -6,22 +6,18 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/baeda/jcache/internal/app/jcache"
-	"github.com/google/uuid"
 	"github.com/pkg/errors"
 	"io"
 	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 )
 
 const basePath = "/home/baeda/dev/go/src/github.com/baeda/jcache/.opt"
 
 var javacDur time.Duration
-
-var jCacheUUID = uuid.New().String()
 
 func main() {
 	start := time.Now()
@@ -52,35 +48,21 @@ type CompilerInfo struct {
 
 type CompileFunc func(string, ...string) (string, string, int, error)
 
-func appendLog(format string, args ...interface{}) {
-	now := time.Now().UTC()
+var l jcache.Logger
 
-	os.MkdirAll(basePath, os.ModePerm)
-	logf, err := os.OpenFile(filepath.Join(basePath, "log.txt"), os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+func init() {
+	ll, err := jcache.NewLogger(filepath.Join(basePath, "newlog.txt"))
 	failOnErr(err)
-	defer logf.Close()
-
-	s := fmt.Sprintf(format, args...)
-	lines := strings.FieldsFunc(s, func(r rune) bool {
-		return r == '\n' || r == '\r'
-	})
-
-	if len(lines) == 1 {
-		logf.WriteString(fmt.Sprintf("[%s][%s] - %s\n", now.Format(time.RFC3339), jCacheUUID, strings.TrimSpace(s)))
-	} else {
-		logf.WriteString(fmt.Sprintf("[%s][%s] - %s\n", now.Format(time.RFC3339), jCacheUUID, strings.TrimSpace(lines[0])))
-		for i := 1; i < len(lines); i++ {
-			logf.WriteString(fmt.Sprintf("                                                             - %s\n", strings.TrimSpace(lines[i])))
-		}
-	}
+	l = ll
 }
 
 func mainExitCode(basePath string, compileFunc CompileFunc, osArgs ...string) (string, string, int) {
 	start := time.Now()
-	appendLog("%v", osArgs)
+
+	l.Info("%v", osArgs)
 	defer func() {
 		elapsed := time.Since(start)
-		appendLog("jCache finished in %+v\n.\n.\n.", elapsed)
+		l.Info("jCache finished in %+v\n.\n.\n.", elapsed)
 	}()
 
 	args, err := jcache.ParseArgs(osArgs)
@@ -95,7 +77,7 @@ func mainExitCode(basePath string, compileFunc CompileFunc, osArgs ...string) (s
 	failOnErr(err)
 
 	if needCompilation(cachePath, sourceInfoPath) {
-		appendLog("cache-miss")
+		l.Info("cache-miss")
 
 		err = os.MkdirAll(cachePath, os.ModePerm)
 		failOnErr(err)
@@ -144,7 +126,7 @@ func mainExitCode(basePath string, compileFunc CompileFunc, osArgs ...string) (s
 		}
 		failOnErr(err)
 		javacDur = time.Since(javacStart)
-		appendLog("javac execution-time: %v", javacDur)
+		l.Info("javac execution-time: %v", javacDur)
 
 		ci := CompilerInfo{
 			Out:  stdout,
@@ -155,7 +137,7 @@ func mainExitCode(basePath string, compileFunc CompileFunc, osArgs ...string) (s
 		err = writeCompilerInfo(ci, compilerInfoPath)
 		failOnErr(err)
 	} else {
-		appendLog("cache-hit")
+		l.Info("cache-hit")
 	}
 
 	copiedFiles := 0
@@ -200,7 +182,7 @@ func mainExitCode(basePath string, compileFunc CompileFunc, osArgs ...string) (s
 	})
 	failOnErr(err)
 
-	appendLog("served %d bytes compiled from %d source files", copiedBytes, copiedFiles)
+	l.Info("served %d bytes compiled from %d source files", copiedBytes, copiedFiles)
 
 	ci, err := readCompilerInfo(compilerInfoPath)
 	failOnErr(err)
@@ -210,12 +192,12 @@ func mainExitCode(basePath string, compileFunc CompileFunc, osArgs ...string) (s
 
 func needCompilation(cachePath, sourceInfoPath string) bool {
 	if _, err := os.Stat(cachePath); os.IsNotExist(err) {
-		appendLog("cache-path does not exist")
+		l.Info("cache-path does not exist")
 		return true
 	}
 
 	if _, err := os.Stat(sourceInfoPath); os.IsNotExist(err) {
-		appendLog("source-info-path does not exist")
+		l.Info("source-info-path does not exist")
 		return true
 	}
 
@@ -224,7 +206,7 @@ func needCompilation(cachePath, sourceInfoPath string) bool {
 	if err != nil {
 		s := fmt.Sprintf("Failed to read source-info.json. Recompiling. %+v", err)
 		fmt.Fprint(os.Stderr, s)
-		appendLog(s)
+		l.Info(s)
 		return true
 	}
 
@@ -233,7 +215,7 @@ func needCompilation(cachePath, sourceInfoPath string) bool {
 		if err != nil {
 			s := fmt.Sprintf("Failed to stat %s. Recompiling. %+v", info.Path, err)
 			fmt.Fprint(os.Stderr, s)
-			appendLog(s)
+			l.Info(s)
 			return true
 		}
 
@@ -243,18 +225,18 @@ func needCompilation(cachePath, sourceInfoPath string) bool {
 				"      cached:   %v",
 				info.Path, stat.ModTime().UTC(), info.ModTime.UTC())
 			fmt.Fprint(os.Stderr, s)
-			appendLog(s)
+			l.Info(s)
 
 			fileDigest, err := shaFile(info.Path)
 			if err != nil {
 				s := fmt.Sprintf("Failed to sha256-digest %s. Recompiling. %+v", info.Path, err)
 				fmt.Fprint(os.Stderr, s)
-				appendLog(s)
+				l.Info(s)
 				return true
 			}
 
 			if fileDigest == info.Sha256 {
-				appendLog("Found identical digest. NOT recompiling.")
+				l.Info("Found identical digest. NOT recompiling.")
 				return false
 			}
 
