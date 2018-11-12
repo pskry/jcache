@@ -3,7 +3,6 @@ package main
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"github.com/baeda/jcache/internal/app/jcache"
 	"github.com/pkg/errors"
@@ -34,18 +33,6 @@ func main() {
 	fmt.Fprint(os.Stdout, stdout)
 	fmt.Fprint(os.Stderr, stderr)
 	os.Exit(exit)
-}
-
-type SourceInfo struct {
-	Path    string
-	ModTime time.Time
-	Sha256  string
-}
-
-type CompilerInfo struct {
-	Out  string
-	Err  string
-	Exit int
 }
 
 type jCache struct {
@@ -109,7 +96,7 @@ func (j *jCache) mainExitCode() (string, string, int) {
 	if j.needCompilation() {
 		l.Info("cache-miss")
 
-		err := writeSourceInfo(j.args, j.sourceInfoPath)
+		err := jcache.MarshalSourceInfoSlice(j.args.Sources, j.sourceInfoPath)
 		failOnErr(err)
 
 		repackArgs := len(j.args.FlatArgs) > 0
@@ -155,13 +142,13 @@ func (j *jCache) mainExitCode() (string, string, int) {
 		javacDur = time.Since(javacStart)
 		l.Info("javac execution-time: %v", javacDur)
 
-		ci := CompilerInfo{
+		ci := jcache.CompilerInfo{
 			Out:  stdout,
 			Err:  stderr,
 			Exit: exit,
 		}
 
-		err = writeCompilerInfo(ci, j.compilerInfoPath)
+		err = jcache.MarshalCompilerInfo(ci, j.compilerInfoPath)
 		failOnErr(err)
 	} else {
 		l.Info("cache-hit")
@@ -174,7 +161,7 @@ func (j *jCache) mainExitCode() (string, string, int) {
 	l.Info("served %d bytes compiled from %d source files", nBytes, nFiles)
 
 	// replay compiler stdout, stderr and exit
-	ci, err := readCompilerInfo(j.compilerInfoPath)
+	ci, err := jcache.UnmarshalCompilerInfo(j.compilerInfoPath)
 	failOnErr(err)
 
 	return ci.Out, ci.Err, ci.Exit
@@ -249,7 +236,7 @@ func (j *jCache) needCompilation() bool {
 	}
 
 	// see if any modified.....
-	infoSlice, err := readSourceInfo(j.sourceInfoPath)
+	infoSlice, err := jcache.UnmarshalSourceInfoSlice(j.sourceInfoPath)
 	if err != nil {
 		s := fmt.Sprintf("Failed to read source-info.json. Recompiling. %+v", err)
 		fmt.Fprint(os.Stderr, s)
@@ -294,50 +281,6 @@ func (j *jCache) needCompilation() bool {
 	return false
 }
 
-func readSourceInfo(sourceInfoPath string) ([]SourceInfo, error) {
-	var infoSlice []SourceInfo
-
-	data, err := ioutil.ReadFile(sourceInfoPath)
-	if err != nil {
-		return nil, err
-	}
-	err = json.Unmarshal(data, &infoSlice)
-	if err != nil {
-		return nil, err
-	}
-
-	return infoSlice, nil
-}
-
-func writeSourceInfo(args jcache.ParsedArgs, sourceInfoPath string) error {
-	var infoSlice []SourceInfo
-
-	for _, src := range args.Sources {
-		stat, err := os.Stat(src)
-		if err != nil {
-			return err
-		}
-
-		fileDigest, err := shaFile(src)
-		if err != nil {
-			return err
-		}
-
-		info := SourceInfo{src, stat.ModTime().UTC(), fileDigest}
-		infoSlice = append(infoSlice, info)
-	}
-	data, err := json.Marshal(infoSlice)
-	if err != nil {
-		return err
-	}
-	err = ioutil.WriteFile(sourceInfoPath, data, 0644)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
 func shaFile(name string) (string, error) {
 	bytes, err := ioutil.ReadFile(name)
 	if err != nil {
@@ -346,33 +289,6 @@ func shaFile(name string) (string, error) {
 
 	sum256 := sha256.Sum256(bytes)
 	return hex.EncodeToString(sum256[:]), nil
-}
-
-func readCompilerInfo(compilerInfoPath string) (ci CompilerInfo, err error) {
-	data, err := ioutil.ReadFile(compilerInfoPath)
-	if err != nil {
-		return
-	}
-	err = json.Unmarshal(data, &ci)
-	if err != nil {
-		return
-	}
-
-	return
-}
-
-func writeCompilerInfo(ci CompilerInfo, compilerInfoPath string) error {
-	data, err := json.Marshal(ci)
-	if err != nil {
-		return err
-	}
-
-	err = ioutil.WriteFile(compilerInfoPath, data, 0644)
-	if err != nil {
-		return err
-	}
-
-	return nil
 }
 
 func failOnErr(err error) {
