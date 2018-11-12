@@ -41,14 +41,16 @@ func TestMissingFinalBrace(t *testing.T) {
 	)
 }
 
-func TestUnsafeCast(t *testing.T) {
+func TestRawType(t *testing.T) {
 	systemTest(t,
-		"jcache/UnsafeCast",
+		"jcache/RawType",
 		func(stdout string) (string, bool) {
 			return "must be empty", stdout == ""
 		},
 		func(stderr string) (string, bool) {
-			return "must be empty", stderr == ""
+			return "must be empty",
+				strings.Contains(stderr, "RawType.java:9: warning: [rawtypes]") &&
+					strings.Contains(stderr, "RawType.java:10: warning: [unchecked]")
 		},
 		func(exit int) (string, bool) {
 			return "must be 0", exit == 0
@@ -77,6 +79,7 @@ func systemTest(t *testing.T, fqcn string, pStdout, pStderr func(string) (string
 		},
 		"_$self",
 		"/usr/bin/javac",
+		"-Xlint:all",
 		"-d", outDir,
 		"../test/testdata/java/"+fqcn+".java",
 	)
@@ -112,6 +115,7 @@ func systemTest(t *testing.T, fqcn string, pStdout, pStderr func(string) (string
 		},
 		"_$self",
 		"/usr/bin/javac",
+		"-Xlint:all",
 		"-d", outDir,
 		"../test/testdata/java/"+fqcn+".java",
 	)
