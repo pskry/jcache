@@ -10,11 +10,24 @@ import (
 	"time"
 )
 
-type Logger interface {
-	Info(format string, args ...interface{})
-}
+type (
+	Logger interface {
+		Info(format string, args ...interface{})
+	}
+	logger struct {
+		id  string
+		out io.WriteCloser
+	}
+)
 
-func NewLogger(logFile string) (Logger, error) {
+func NewLogger(out io.WriteCloser) (Logger, error) {
+	l := logger{
+		id:  uuid.New().String(),
+		out: out,
+	}
+	return &l, nil
+}
+func NewFileLogger(logFile string) (Logger, error) {
 	dir := filepath.Dir(logFile)
 	err := os.MkdirAll(dir, os.ModePerm)
 	if err != nil {
@@ -26,48 +39,34 @@ func NewLogger(logFile string) (Logger, error) {
 		return nil, err
 	}
 
-	l := logger{
-		id:  uuid.New().String(),
-		out: out,
-	}
-	return &l, nil
+	return NewLogger(out)
 }
-
-type logger struct {
-	id  string
-	out io.WriteCloser
-}
-
 func (l *logger) Info(format string, args ...interface{}) {
 	now := time.Now().UTC()
 	lines := splitLines(format, args...)
 
 	for i, line := range lines {
 		if i == 0 {
-			io.WriteString(l.out, l.fmtLine(now.Format(time.RFC3339), line))
+			io.WriteString(l.out, fmtLine(l.id, now.Format(time.RFC3339), line))
 		} else {
-			io.WriteString(l.out, l.fmtLineContd(line))
+			io.WriteString(l.out, fmtLineContd(line))
 		}
 	}
 }
-
 func (l *logger) Close() error {
 	return l.out.Close()
 }
 
-func (l *logger) fmtLine(timeFmt string, msg string) string {
-	return fmt.Sprintf("[%s][%s] - %s\n", timeFmt, l.id, strings.TrimSpace(msg))
+func fmtLine(id, timeFmt, msg string) string {
+	return fmt.Sprintf("[%s][%s] - %s\n", timeFmt, id, strings.TrimSpace(msg))
 }
-
-func (l *logger) fmtLineContd(msg string) string {
+func fmtLineContd(msg string) string {
 	return fmt.Sprintf("                                                             - %s\n", strings.TrimSpace(msg))
 }
-
 func splitLines(format string, args ...interface{}) []string {
 	formatted := fmt.Sprintf(format, args...)
 	return strings.FieldsFunc(formatted, splitByNewline)
 }
-
 func splitByNewline(r rune) bool {
 	return r == '\n' || r == '\r'
 }

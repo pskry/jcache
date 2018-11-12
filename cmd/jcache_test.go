@@ -84,7 +84,8 @@ func systemTest(t *testing.T, fqcn string, pStdout, pStderr func(string) (string
 		"../test/testdata/java/"+fqcn+".java",
 	)
 	failOnErr(err)
-	stdout, stderr, exit := jc.mainExitCode()
+	stdout, stderr, exit, err := jc.mainExitCode()
+	failOnErr(err)
 
 	desc, ok := pStdout(stdout)
 	if !ok {
@@ -122,7 +123,8 @@ func systemTest(t *testing.T, fqcn string, pStdout, pStderr func(string) (string
 		"../test/testdata/java/"+fqcn+".java",
 	)
 	failOnErr(err)
-	stdout, stderr, exit = jc.mainExitCode()
+	stdout, stderr, exit, err = jc.mainExitCode()
+	failOnErr(err)
 
 	desc, ok = pStdout(stdout)
 	if !ok {
