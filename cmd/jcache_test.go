@@ -33,7 +33,8 @@ func TestMissingFinalBrace(t *testing.T) {
 			return "must be empty", stdout == ""
 		},
 		func(stderr string) (string, bool) {
-			return "must contain error location", strings.Contains(stderr, "MissingFinalBrace.java:3: error:")
+			return "must contain error location",
+				strings.Contains(stderr, "MissingFinalBrace.java:3: error:")
 		},
 		func(exit int) (string, bool) {
 			return "must not be 0", exit != 0
@@ -48,7 +49,24 @@ func TestRawType(t *testing.T) {
 			return "must be empty", stdout == ""
 		},
 		func(stderr string) (string, bool) {
-			return "must be empty",
+			return "must contain warnings",
+				strings.Contains(stderr, "RawType.java:9: warning: [rawtypes]") &&
+					strings.Contains(stderr, "RawType.java:10: warning: [unchecked]")
+		},
+		func(exit int) (string, bool) {
+			return "must be 0", exit == 0
+		},
+	)
+}
+
+func TestJni(t *testing.T) {
+	systemTest(t,
+		"jni/Jni",
+		func(stdout string) (string, bool) {
+			return "must be empty", stdout == ""
+		},
+		func(stderr string) (string, bool) {
+			return "must contain warnings",
 				strings.Contains(stderr, "RawType.java:9: warning: [rawtypes]") &&
 					strings.Contains(stderr, "RawType.java:10: warning: [unchecked]")
 		},
@@ -67,6 +85,7 @@ func systemTest(t *testing.T, fqcn string, pStdout, pStderr func(string) (string
 
 	cacheDir := filepath.Join(tmpDir, "cache")
 	outDir := filepath.Join(tmpDir, "out")
+	includeDir := filepath.Join(tmpDir, "include")
 
 	compileCalled := false
 
@@ -82,11 +101,12 @@ func systemTest(t *testing.T, fqcn string, pStdout, pStderr func(string) (string
 		"/usr/bin/javac",
 		"-Xlint:all",
 		"-d", outDir,
+		"-h", includeDir,
 		"../test/testdata/java/"+fqcn+".java",
 	)
-	failOnErr(err)
+	clearAndRetryOnError(err)
 	stdout, stderr, exit, err := jc.Execute()
-	failOnErr(err)
+	clearAndRetryOnError(err)
 
 	desc, ok := pStdout(stdout)
 	if !ok {
@@ -124,9 +144,9 @@ func systemTest(t *testing.T, fqcn string, pStdout, pStderr func(string) (string
 		"-d", outDir,
 		"../test/testdata/java/"+fqcn+".java",
 	)
-	failOnErr(err)
+	clearAndRetryOnError(err)
 	stdout, stderr, exit, err = jc.Execute()
-	failOnErr(err)
+	clearAndRetryOnError(err)
 
 	desc, ok = pStdout(stdout)
 	if !ok {

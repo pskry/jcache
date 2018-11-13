@@ -9,19 +9,26 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"time"
 )
 
 type (
 	Logger interface {
 		Info(format string, args ...interface{})
+		Debug(format string, args ...interface{})
+		log(skip int, level, format string, args ...interface{})
 	}
 	logger struct {
 		id  string
 		out io.Writer
 	}
+	loggerChain struct {
+		loggers []Logger
+	}
 )
 
+func NewLoggerChain(loggers ...Logger) Logger {
+	return &loggerChain{loggers}
+}
 func NewLogger(out io.Writer) Logger {
 	l := logger{
 		id:  uuid.New().String(),
@@ -44,39 +51,43 @@ func NewFileLogger(logFile string) (Logger, error) {
 	return NewLogger(out), nil
 }
 func (l *logger) Info(format string, args ...interface{}) {
+	l.log(5, "INFO", format, args...)
+}
+func (l *logger) Debug(format string, args ...interface{}) {
+	l.log(5, "DEBUG", format, args...)
+}
+func (l *logger) log(skip int, level, format string, args ...interface{}) {
 	if l.out == nil {
 		return
 	}
 
-	now := time.Now().UTC()
+	//now := time.Now().UTC()
 	for i, arg := range args {
 		if err, ok := arg.(error); ok {
 			args[i] = errors.WithStack(err)
 		}
 	}
 
-	lines := splitLines(format, args...)
+	//lines := splitLines(format, args...)
+	//
+	//for i, line := range lines {
+	//	if i == 0 {
+	//		l.write(skip, fmtLine(l.id, now.Format(time.RFC3339), line))
+	//	} else {
+	//		l.write(skip, fmtLineContd(line))
+	//	}
+	//}
 
-	for i, line := range lines {
-		if i == 0 {
-			l.write(fmtLine(l.id, now.Format(time.RFC3339), line))
-		} else {
-			l.write(fmtLineContd(line))
-		}
-	}
+	l.write(skip, level, fmt.Sprintf(format, args...))
 }
-
-func (l *logger) write(msg string) {
-	f := callerFrame(4)
+func (l *logger) write(skip int, level, msg string) {
+	f := callerFrame(skip)
 	if strings.HasSuffix(msg, "\n") {
 		msg = msg[:len(msg)-1]
 	}
-	var traced string
-	if strings.HasPrefix(msg, "                                                             -") {
-		traced = msg + "\n"
-	} else {
-		traced = fmt.Sprintf("%s :: %s:%d (%s)\n", msg, f.File, f.Line, f.Function)
-	}
+	gopath := filepath.Join(os.Getenv("GOPATH"), "src")
+	file, _ := filepath.Rel(gopath, f.File)
+	traced := fmt.Sprintf("[%5s] %s:%d: %s\n", level, file, f.Line, msg)
 	io.WriteString(l.out, traced)
 }
 func fmtLine(id, timeFmt, msg string) string {
@@ -92,11 +103,22 @@ func splitLines(format string, args ...interface{}) []string {
 func splitByNewline(r rune) bool {
 	return r == '\n' || r == '\r'
 }
-
 func callerFrame(skip int) runtime.Frame {
 	pc := make([]uintptr, 15)
 	n := runtime.Callers(skip, pc)
 	frames := runtime.CallersFrames(pc[:n])
 	frame, _ := frames.Next()
 	return frame
+}
+
+func (l *loggerChain) Info(format string, args ...interface{}) {
+	l.log(5, "INFO", format, args...)
+}
+func (l *loggerChain) Debug(format string, args ...interface{}) {
+	l.log(5, "DEBUG", format, args...)
+}
+func (l *loggerChain) log(skip int, level, format string, args ...interface{}) {
+	for _, logger := range l.loggers {
+		logger.log(skip+1, level, format, args...)
+	}
 }

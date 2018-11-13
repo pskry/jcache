@@ -21,6 +21,8 @@ type (
 		sourcePaths  []string
 		sources      []string
 		dstDir       string
+		incDir       string
+		genDir       string
 		uuid         string
 		parsed       bool
 	}
@@ -31,6 +33,8 @@ type (
 		SourcePaths  []string
 		Sources      []string
 		DstDir       string
+		IncDir       string
+		GenDir       string
 		UUID         string
 	}
 )
@@ -51,6 +55,8 @@ func ParseArgs(osArgs []string) (ParsedArgs, error) {
 		SourcePaths:  p.sourcePaths,
 		Sources:      p.sources,
 		DstDir:       p.dstDir,
+		IncDir:       p.incDir,
+		GenDir:       p.genDir,
 		UUID:         p.uuid,
 	}
 
@@ -73,7 +79,9 @@ func (p *parser) parse(osArgs []string) error {
 
 	p.findSourcePaths()
 	p.findSourceFiles()
-	p.findDstDir()
+	p.dstDir = p.findValueForOption("-d")
+	p.incDir = p.findValueForOption("-h")
+	p.genDir = p.findValueForOption("-s")
 	if err := p.computeUUID(); err != nil {
 		return err
 	}
@@ -165,13 +173,13 @@ func (p *parser) findSourceFiles() {
 	p.sources = sources
 }
 
-func (p *parser) findDstDir() {
+func (p *parser) findValueForOption(option string) string {
 	for i, arg := range p.flatArgs {
-		if arg == "-d" {
-			p.dstDir = p.flatArgs[i+1]
-			break
+		if arg == option {
+			return p.flatArgs[i+1]
 		}
 	}
+	return ""
 }
 
 func (p *parser) computeUUID() error {

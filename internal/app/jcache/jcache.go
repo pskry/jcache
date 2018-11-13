@@ -5,6 +5,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 )
 
@@ -19,7 +20,8 @@ type (
 		destinationInfoPath string
 		dstHashes           map[string]string
 		compilerInfoPath    string
-		dstCachePath        string
+		classesCachePath    string
+		includeCachePath    string
 		log                 Logger
 	}
 	CompileFunc func(string, ...string) (string, string, int, error)
@@ -32,11 +34,35 @@ func NewCache(basePath string, compileFunc CompileFunc, logger Logger, osArgs ..
 	}
 
 	cachePath := filepath.Join(basePath, args.UUID)
-	dstCachePath := filepath.Join(cachePath, "classes")
+	classesCachePath := filepath.Join(cachePath, "classes")
+	includeCachePath := filepath.Join(cachePath, "include")
 
-	err = os.MkdirAll(dstCachePath, os.ModePerm)
+	err = os.MkdirAll(classesCachePath, os.ModePerm)
 	if err != nil {
 		return nil, err
+	}
+	err = os.MkdirAll(includeCachePath, os.ModePerm)
+	if err != nil {
+		return nil, err
+	}
+
+	if args.DstDir != "" {
+		err = os.MkdirAll(args.DstDir, os.ModePerm)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if args.IncDir != "" {
+		err = os.MkdirAll(args.IncDir, os.ModePerm)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if args.GenDir != "" {
+		err = os.MkdirAll(args.GenDir, os.ModePerm)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	jc := &jCache{
@@ -48,15 +74,25 @@ func NewCache(basePath string, compileFunc CompileFunc, logger Logger, osArgs ..
 		sourceInfoPath:      filepath.Join(cachePath, "source-info.json"),
 		destinationInfoPath: filepath.Join(cachePath, "destination-info.json"),
 		compilerInfoPath:    filepath.Join(cachePath, "compiler-info.json"),
-		dstCachePath:        dstCachePath,
+		classesCachePath:    classesCachePath,
+		includeCachePath:    includeCachePath,
 		log:                 logger,
 	}
 
 	return jc, nil
 }
-func (j *jCache) dOptionIndex() int {
+func (j *jCache) optionIndexOf(option string) int {
 	for i, arg := range j.args.FlatArgs {
-		if arg == "-d" {
+		if arg == option {
+			return i
+		}
+	}
+
+	return -1
+}
+func optionIndexOf(args []string, option string) int {
+	for i, arg := range args {
+		if arg == option {
 			return i
 		}
 	}
@@ -68,26 +104,49 @@ func (j *jCache) repackArgs() []string {
 		return j.args.OriginalArgs
 	}
 
+	repacked := j.args.FlatArgs
+	repacked = redirectArgOption(repacked, "-d", j.classesCachePath, true)
+	// adding -h changes the behaviour of javac (v1.8+). We don't want that
+	repacked = redirectArgOption(repacked, "-h", j.includeCachePath, false)
+	return repacked
+}
+func redirectArgOption(argsIn []string, option, value string, addIfNotExists bool) []string {
 	// re-pack compiler arguments
-	dOption := j.dOptionIndex()
-	if dOption < 0 {
-		// we'll need to add our out-dir
-		args := make([]string, len(j.args.FlatArgs)+2)
-		args[0] = "-d"
-		args[1] = j.dstCachePath
-		for i := 0; i < len(j.args.FlatArgs); i++ {
-			args[i+2] = j.args.FlatArgs[i]
-		}
-		return args
-	} else {
-		args := make([]string, len(j.args.FlatArgs))
-		copy(args, j.args.FlatArgs)
+	optIdx := optionIndexOf(argsIn, option)
+	if optIdx >= 0 {
+		args := make([]string, len(argsIn))
+		copy(args, argsIn)
 
-		args[dOption+1] = j.dstCachePath
+		args[optIdx+1] = value
 		return args
 	}
+	if !addIfNotExists {
+		return argsIn
+	}
+
+	// we'll need to add our classes-out-dir
+	args := make([]string, len(argsIn)+2)
+	args[0] = option
+	args[1] = value
+	for i := 0; i < len(argsIn); i++ {
+		args[i+2] = argsIn[i]
+	}
+	return args
 }
 func (j *jCache) Execute() (string, string, int, error) {
+	stdout, stderr, exit, err := j.execute()
+	if err == nil {
+		return stdout, stderr, exit, nil
+	}
+
+	// clear my cache and re-compile
+	if e := os.RemoveAll(j.cachePath); e != nil {
+		return "", "", 0, err // ret original error
+	}
+	// TODO baeda - we probably want to run JUST javac. nothing altered, to ensure that we actually didn't mess anything up for people.
+	return j.execute()
+}
+func (j *jCache) execute() (string, string, int, error) {
 	start := time.Now()
 
 	j.log.Info("%v", j.osArgs)
@@ -104,21 +163,15 @@ func (j *jCache) Execute() (string, string, int, error) {
 			return "", "", 0, err
 		}
 
-		var stdout, stderr string
-		var exit int
-
-		javacStart := time.Now()
 		repackedArgs := j.repackArgs()
-		if len(repackedArgs) < 8 { // TODO baeda - find reasonable threshold
-			stdout, stderr, exit, err = j.compileFunc(j.args.CompilerPath, repackedArgs...)
-		} else {
-			filename, err := writeArgsToTmpFile(repackedArgs)
-			if err != nil {
-				return "", "", 0, err
-			}
-
-			stdout, stderr, exit, err = j.compileFunc(j.args.CompilerPath, "@"+filename)
+		filename, err := writeArgsToTmpFile(repackedArgs)
+		if err != nil {
+			return "", "", 0, err
 		}
+
+		j.log.Info("%s %s\n", j.args.CompilerPath, "@"+filename)
+		javacStart := time.Now()
+		stdout, stderr, exit, err := j.compileFunc(j.args.CompilerPath, "@"+filename)
 		if err != nil {
 			return "", "", 0, err
 		}
@@ -126,7 +179,7 @@ func (j *jCache) Execute() (string, string, int, error) {
 		j.log.Info("javac execution-time: %v", time.Since(javacStart))
 
 		var destinations []string
-		err = filepath.Walk(j.dstCachePath, func(path string, info os.FileInfo, err error) error {
+		err = filepath.Walk(j.classesCachePath, func(path string, info os.FileInfo, err error) error {
 			if err != nil {
 				return err
 			}
@@ -177,8 +230,43 @@ func (j *jCache) Execute() (string, string, int, error) {
 	return ci.Out, ci.Err, ci.Exit, nil
 }
 func (j *jCache) copyCachedFiles() (nFiles int, nBytes int64, err error) {
+	const N = 2
+
+	wg := sync.WaitGroup{}
+	wg.Add(N)
+	f := make([]int, N)
+	b := make([]int64, N)
+	e := make([]error, N)
+
+	go func() {
+		f[N-2], b[N-2], e[N-2] = copyCachedFiles(j.classesCachePath, j.args.DstDir)
+		wg.Done()
+	}()
+	go func() {
+		f[N-1], b[N-1], e[N-1] = copyCachedFiles(j.includeCachePath, j.args.IncDir)
+		wg.Done()
+	}()
+
+	wg.Wait()
+
+	for _, err = range e {
+		if err != nil {
+			return
+		}
+	}
+
+	for _, n := range f {
+		nFiles += n
+	}
+	for _, n := range b {
+		nBytes += n
+	}
+
+	return
+}
+func copyCachedFiles(basePath, dstPath string) (nFiles int, nBytes int64, err error) {
 	err = filepath.Walk(
-		j.dstCachePath,
+		basePath,
 		func(src string, srcInfo os.FileInfo, err error) error {
 			// abort walking on first error encountered
 			if err != nil {
@@ -194,26 +282,14 @@ func (j *jCache) copyCachedFiles() (nFiles int, nBytes int64, err error) {
 			}
 
 			// construct fully qualified class name (JVM style)
-			fqcp, err := filepath.Rel(j.dstCachePath, src)
+			fqcp, err := filepath.Rel(basePath, src)
 			if err != nil {
 				return err
 			}
 
-			dst := filepath.Join(j.args.DstDir, fqcp)
-			err = j.lazyLoadDstHashes()
+			dst := filepath.Join(dstPath, fqcp)
 			if err != nil {
 				return err
-			}
-
-			if _, err := os.Stat(dst); err == nil {
-				if srcHash, ok := j.dstHashes[src]; ok {
-					if dstHash, err := Sha256File(dst); err == nil {
-						if srcHash == dstHash {
-							j.log.Info("skipping %s", src)
-							return nil
-						}
-					}
-				}
 			}
 
 			err = os.MkdirAll(filepath.Dir(dst), os.ModePerm)
@@ -265,6 +341,11 @@ func (j *jCache) needCompilation() bool {
 	}
 
 	if DoesNotExist(j.sourceInfoPath) {
+		j.log.Info("source-info-path does not exist")
+		return true
+	}
+
+	if DoesNotExist(j.compilerInfoPath) {
 		j.log.Info("source-info-path does not exist")
 		return true
 	}
