@@ -68,16 +68,6 @@ func (l *logger) log(skip int, level, format string, args ...interface{}) {
 		}
 	}
 
-	//lines := splitLines(format, args...)
-	//
-	//for i, line := range lines {
-	//	if i == 0 {
-	//		l.write(skip, fmtLine(l.id, now.Format(time.RFC3339), line))
-	//	} else {
-	//		l.write(skip, fmtLineContd(line))
-	//	}
-	//}
-
 	l.write(skip, level, fmt.Sprintf(format, args...))
 }
 func (l *logger) write(skip int, level, msg string) {
@@ -89,19 +79,6 @@ func (l *logger) write(skip int, level, msg string) {
 	file, _ := filepath.Rel(gopath, f.File)
 	traced := fmt.Sprintf("[%5s] %s:%d: %s\n", level, file, f.Line, msg)
 	io.WriteString(l.out, traced)
-}
-func fmtLine(id, timeFmt, msg string) string {
-	return fmt.Sprintf("[%s][%s] - %s\n", timeFmt, id, strings.TrimSpace(msg))
-}
-func fmtLineContd(msg string) string {
-	return fmt.Sprintf("                                                             - %s\n", strings.TrimSpace(msg))
-}
-func splitLines(format string, args ...interface{}) []string {
-	formatted := fmt.Sprintf(format, args...)
-	return strings.FieldsFunc(formatted, splitByNewline)
-}
-func splitByNewline(r rune) bool {
-	return r == '\n' || r == '\r'
 }
 func callerFrame(skip int) runtime.Frame {
 	pc := make([]uintptr, 15)

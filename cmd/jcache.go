@@ -18,7 +18,9 @@ var toRun = cli
 func main() {
 	now := time.Now()
 	err := toRun()
-	clearAndRetryOnError(err)
+	if err != nil {
+		panic(err)
+	}
 	fmt.Fprintf(os.Stderr, "\n\nTIME: %v\n", time.Since(now))
 }
 func profile() error {
@@ -30,11 +32,11 @@ func profile() error {
 	enableLog = false
 	x := 0
 	for i := 0; i < 5000; i++ {
-		stdout, stderr, exit, err := entry()
+		info, err := entry()
 		if err != nil {
 			return err
 		}
-		x += len(stdout) + len(stderr) + exit
+		x += len(info.Stdout) + len(info.Stderr) + info.Exit
 		i++
 	}
 	fmt.Println(x)
@@ -42,18 +44,18 @@ func profile() error {
 	return nil
 }
 func cli() error {
-	stdout, stderr, exit, err := entry()
+	info, err := entry()
 	if err != nil {
 		return err
 	}
 
-	fmt.Fprint(os.Stdout, stdout)
-	fmt.Fprint(os.Stderr, stderr)
-	os.Exit(exit)
+	fmt.Fprint(os.Stdout, info.Stdout)
+	fmt.Fprint(os.Stderr, info.Stderr)
+	os.Exit(info.Exit)
 
 	return nil
 }
-func entry() (stdout, stderr string, exit int, err error) {
+func entry() (info *jcache.CompilerInfo, err error) {
 	jc, err := jcache.NewCache(
 		basePath,
 		jcache.Command,
@@ -61,7 +63,7 @@ func entry() (stdout, stderr string, exit int, err error) {
 		os.Args...,
 	)
 	if err != nil {
-		return "", "", 0, err
+		return nil, err
 	}
 	return jc.Execute()
 }

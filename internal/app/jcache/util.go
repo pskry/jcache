@@ -3,7 +3,6 @@ package jcache
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"io"
 	"io/ioutil"
 	"os"
 )
@@ -18,23 +17,7 @@ func Sha256File(path string) (string, error) {
 	return hex.EncodeToString(sum256[:]), nil
 }
 
-func CopyFile(from, to string) (int64, error) {
-	src, err := os.Open(from)
-	if err != nil {
-		return 0, err
-	}
-	defer src.Close()
-
-	dst, err := os.Create(to)
-	if err != nil {
-		return 0, err
-	}
-	defer dst.Close()
-
-	return io.Copy(dst, src)
-}
-
-func DoesNotExist(dir string) bool {
-	_, err := os.Stat(dir)
+func DoesNotExist(path string) bool {
+	_, err := os.Stat(path)
 	return os.IsNotExist(err)
 }

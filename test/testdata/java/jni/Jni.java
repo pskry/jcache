@@ -1,3 +1,5 @@
+package jni;
+
 public class Jni {
 
     public native int jniAdd(int a, int b);

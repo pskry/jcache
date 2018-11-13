@@ -23,6 +23,10 @@ func TestEmptyTopLevelClass(t *testing.T) {
 		func(exit int) (string, bool) {
 			return "must be 0", exit == 0
 		},
+		func(javac, jcache error) bool {
+			return javac == nil && jcache == nil
+		},
+		nil,
 	)
 }
 
@@ -39,6 +43,10 @@ func TestMissingFinalBrace(t *testing.T) {
 		func(exit int) (string, bool) {
 			return "must not be 0", exit != 0
 		},
+		func(javac, jcache error) bool {
+			return javac.Error() == jcache.Error() // TODO weak. I know oh well
+		},
+		nil,
 	)
 }
 
@@ -56,6 +64,10 @@ func TestRawType(t *testing.T) {
 		func(exit int) (string, bool) {
 			return "must be 0", exit == 0
 		},
+		func(javac, jcache error) bool {
+			return javac == nil && jcache == nil
+		},
+		nil,
 	)
 }
 
@@ -66,17 +78,21 @@ func TestJni(t *testing.T) {
 			return "must be empty", stdout == ""
 		},
 		func(stderr string) (string, bool) {
-			return "must contain warnings",
-				strings.Contains(stderr, "RawType.java:9: warning: [rawtypes]") &&
-					strings.Contains(stderr, "RawType.java:10: warning: [unchecked]")
+			return "must be empty", stderr == ""
 		},
 		func(exit int) (string, bool) {
 			return "must be 0", exit == 0
 		},
+		func(javac, jcache error) bool {
+			return javac == nil && jcache == nil
+		},
+		func(javac, jcache error) bool {
+			return javac == nil && jcache == nil
+		},
 	)
 }
 
-func systemTest(t *testing.T, fqcn string, pStdout, pStderr func(string) (string, bool), pExit func(int) (string, bool)) {
+func systemTest(t *testing.T, fqcn string, pStdout, pStderr func(string) (string, bool), pExit func(int) (string, bool), readErrCmp func(error, error) bool, incErrCmp func(error, error) bool) {
 	tmpDir, err := ioutil.TempDir("", "jcache_test")
 	if err != nil {
 		t.Fatal(err)
@@ -85,40 +101,40 @@ func systemTest(t *testing.T, fqcn string, pStdout, pStderr func(string) (string
 
 	cacheDir := filepath.Join(tmpDir, "cache")
 	outDir := filepath.Join(tmpDir, "out")
-	includeDir := filepath.Join(tmpDir, "include")
+	incDir := filepath.Join(tmpDir, "include")
 
 	compileCalled := false
 
 	// first run. must call compile
 	jc, err := jcache.NewCache(
 		cacheDir,
-		func(name string, args ...string) (fOut string, fErr string, exit int, err error) {
+		func(name string, args ...string) (info *jcache.CompilerInfo, err error) {
 			compileCalled = true
 			return jcache.Command(name, args...)
 		},
-		jcache.NewLogger(nil),
+		jcache.NewLogger(os.Stdout),
 		"_$self",
 		"/usr/bin/javac",
 		"-Xlint:all",
 		"-d", outDir,
-		"-h", includeDir,
+		"-h", incDir,
 		"../test/testdata/java/"+fqcn+".java",
 	)
-	clearAndRetryOnError(err)
-	stdout, stderr, exit, err := jc.Execute()
-	clearAndRetryOnError(err)
+	panicOnErr(err)
+	info, err := jc.Execute()
+	panicOnErr(err)
 
-	desc, ok := pStdout(stdout)
+	desc, ok := pStdout(info.Stdout)
 	if !ok {
-		t.Fatalf("pStdout <%v> failed. stdout=%v", desc, stdout)
+		t.Fatalf("pStdout <%v> failed. stdout=%v", desc, info.Stdout)
 	}
-	desc, ok = pStderr(stderr)
+	desc, ok = pStderr(info.Stderr)
 	if !ok {
-		t.Fatalf("pStderr <%v> failed. stderr=%v", desc, stderr)
+		t.Fatalf("pStderr <%v> failed. stderr=%v", desc, info.Stderr)
 	}
-	desc, ok = pExit(exit)
+	desc, ok = pExit(info.Exit)
 	if !ok {
-		t.Fatalf("pExit <%v> failed. exit=%d", desc, exit)
+		t.Fatalf("pExit <%v> failed. exit=%d", desc, info.Exit)
 	}
 
 	if !compileCalled {
@@ -127,6 +143,7 @@ func systemTest(t *testing.T, fqcn string, pStdout, pStderr func(string) (string
 
 	// grab output
 	data0, readErr0 := ioutil.ReadFile(filepath.Join(outDir, fqcn+".class"))
+	incDat0, incErr0 := ioutil.ReadFile(filepath.Join(incDir, strings.Replace(fqcn, "/", "_", -1)+".h"))
 
 	// second run. must not compile
 	// delete all output
@@ -134,41 +151,57 @@ func systemTest(t *testing.T, fqcn string, pStdout, pStderr func(string) (string
 
 	jc, err = jcache.NewCache(
 		cacheDir,
-		func(name string, args ...string) (fOut string, fErr string, exit int, err error) {
+		func(name string, args ...string) (info *jcache.CompilerInfo, err error) {
 			panic(fmt.Sprintf("compile called! %s(%v)", name, args))
 		},
-		jcache.NewLogger(nil),
+		jcache.NewLogger(os.Stdout),
 		"_$self",
 		"/usr/bin/javac",
 		"-Xlint:all",
 		"-d", outDir,
+		"-h", incDir,
 		"../test/testdata/java/"+fqcn+".java",
 	)
-	clearAndRetryOnError(err)
-	stdout, stderr, exit, err = jc.Execute()
-	clearAndRetryOnError(err)
+	panicOnErr(err)
+	info, err = jc.Execute()
+	panicOnErr(err)
 
-	desc, ok = pStdout(stdout)
+	desc, ok = pStdout(info.Stdout)
 	if !ok {
-		t.Fatalf("pStdout <%v> failed. stdout=%v", desc, stdout)
+		t.Fatalf("pStdout <%v> failed. stdout=%v", desc, info.Stdout)
 	}
-	desc, ok = pStderr(stderr)
+	desc, ok = pStderr(info.Stderr)
 	if !ok {
-		t.Fatalf("pStderr <%v> failed. stderr=%v", desc, stderr)
+		t.Fatalf("pStderr <%v> failed. stderr=%v", desc, info.Stderr)
 	}
-	desc, ok = pExit(exit)
+	desc, ok = pExit(info.Exit)
 	if !ok {
-		t.Fatalf("pExit <%v> failed. exit=%d", desc, exit)
+		t.Fatalf("pExit <%v> failed. exit=%d", desc, info.Exit)
 	}
 
 	data1, readErr1 := ioutil.ReadFile(filepath.Join(outDir, fqcn+".class"))
+	incDat1, incErr1 := ioutil.ReadFile(filepath.Join(incDir, strings.Replace(fqcn, "/", "_", -1)+".h"))
 
 	// both jcache invocations must produce the EXACT same output file.
-	if readErr0 != nil && readErr1 != nil && readErr0.Error() != readErr1.Error() {
-		t.Fatalf("The two file-read errors are not identical!")
+	if !bytes.Equal(data0, data1) {
+		t.Fatalf("The two output files are not identical!")
 	}
 
-	if data0 != nil && data1 != nil && !bytes.Equal(data0, data1) {
-		t.Fatalf("The two output files are not identical!")
+	if !bytes.Equal(incDat0, incDat1) {
+		t.Fatalf("The two header files are not identical!")
+	}
+
+	if readErrCmp != nil && !readErrCmp(readErr0, readErr1) {
+		t.Fatalf("Read errors: ... javac:\n%#v\n\njcache:\n%#v", readErr0, readErr1)
+	}
+
+	if incErrCmp != nil && !incErrCmp(incErr0, incErr1) {
+		t.Fatalf("Inc errors: ... javac:\n%#v\n\njcache:\n%#v", readErr0, readErr1)
+	}
+}
+
+func panicOnErr(err error) {
+	if err != nil {
+		panic(err)
 	}
 }

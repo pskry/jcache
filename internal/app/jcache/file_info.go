@@ -1,7 +1,6 @@
 package jcache
 
 import (
-	"encoding/json"
 	"os"
 	"time"
 )
@@ -19,7 +18,7 @@ func UnmarshalFileInfoSlice(path string) (infoSlice []FileInfo, err error) {
 	}
 	defer file.Close()
 
-	dec := json.NewDecoder(file)
+	dec := NewDecoder(file)
 	err = dec.Decode(&infoSlice)
 	return
 }
@@ -36,7 +35,7 @@ func MarshalFileInfoSlice(paths []string, outFile string) error {
 		return err
 	}
 
-	enc := json.NewEncoder(file)
+	enc := NewEncoder(file)
 	return enc.Encode(infoSlice)
 }
 
