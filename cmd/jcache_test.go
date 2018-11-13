@@ -71,12 +71,13 @@ func systemTest(t *testing.T, fqcn string, pStdout, pStderr func(string) (string
 	compileCalled := false
 
 	// first run. must call compile
-	jc, err := newCache(
+	jc, err := jcache.NewCache(
 		cacheDir,
 		func(name string, args ...string) (fOut string, fErr string, exit int, err error) {
 			compileCalled = true
 			return jcache.Command(name, args...)
 		},
+		jcache.NewLogger(nil),
 		"_$self",
 		"/usr/bin/javac",
 		"-Xlint:all",
@@ -84,7 +85,7 @@ func systemTest(t *testing.T, fqcn string, pStdout, pStderr func(string) (string
 		"../test/testdata/java/"+fqcn+".java",
 	)
 	failOnErr(err)
-	stdout, stderr, exit, err := jc.mainExitCode()
+	stdout, stderr, exit, err := jc.Execute()
 	failOnErr(err)
 
 	desc, ok := pStdout(stdout)
@@ -111,11 +112,12 @@ func systemTest(t *testing.T, fqcn string, pStdout, pStderr func(string) (string
 	// delete all output
 	os.RemoveAll(outDir)
 
-	jc, err = newCache(
+	jc, err = jcache.NewCache(
 		cacheDir,
 		func(name string, args ...string) (fOut string, fErr string, exit int, err error) {
 			panic(fmt.Sprintf("compile called! %s(%v)", name, args))
 		},
+		jcache.NewLogger(nil),
 		"_$self",
 		"/usr/bin/javac",
 		"-Xlint:all",
@@ -123,7 +125,7 @@ func systemTest(t *testing.T, fqcn string, pStdout, pStderr func(string) (string
 		"../test/testdata/java/"+fqcn+".java",
 	)
 	failOnErr(err)
-	stdout, stderr, exit, err = jc.mainExitCode()
+	stdout, stderr, exit, err = jc.Execute()
 	failOnErr(err)
 
 	desc, ok = pStdout(stdout)

@@ -2,14 +2,12 @@ package jcache
 
 import (
 	"bytes"
-	"fmt"
 	"os/exec"
 	"syscall"
 )
 
 func Command(name string, args ...string) (fOut string, fErr string, exit int, err error) {
 	cmd := exec.Command(name, args...)
-	fmt.Printf("Exec: %v%v\n", name, args)
 
 	var outBuf bytes.Buffer
 	var errBuf bytes.Buffer

@@ -2,7 +2,7 @@ package jcache
 
 import (
 	"encoding/json"
-	"io/ioutil"
+	"os"
 )
 
 type CompilerInfo struct {
@@ -12,28 +12,24 @@ type CompilerInfo struct {
 }
 
 func UnmarshalCompilerInfo(path string) (info CompilerInfo, err error) {
-	data, err := ioutil.ReadFile(path)
+	file, err := os.Open(path)
 	if err != nil {
 		return
 	}
-	err = json.Unmarshal(data, &info)
-	if err != nil {
-		return
-	}
+	defer file.Close()
 
+	dec := json.NewDecoder(file)
+	err = dec.Decode(&info)
 	return
 }
 
 func MarshalCompilerInfo(info CompilerInfo, path string) error {
-	data, err := json.Marshal(info)
+	file, err := os.Create(path)
 	if err != nil {
 		return err
 	}
+	defer file.Close()
 
-	err = ioutil.WriteFile(path, data, 0644)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	enc := json.NewEncoder(file)
+	return enc.Encode(info)
 }
