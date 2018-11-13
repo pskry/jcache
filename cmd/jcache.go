@@ -4,24 +4,32 @@ import (
 	"fmt"
 	"github.com/baeda/jcache/internal/app/jcache"
 	"github.com/pkg/errors"
-	"io"
 	"io/ioutil"
 	"log"
 	"math/rand"
 	"os"
 	"path/filepath"
 	"runtime/pprof"
-	"sync"
 	"time"
 )
 
 const basePath = "/home/baeda/dev/go/src/github.com/baeda/jcache/.opt"
 
 var javacDur time.Duration
+var l jcache.Logger
+var enableLog = true
 
-func bigBytes() *[]byte {
-	s := make([]byte, 100000000)
-	return &s
+func init() {
+	if enableLog {
+		ll, err := jcache.NewFileLogger(filepath.Join(basePath, "log.txt"))
+		if err != nil {
+			// well... just log to stderr
+			ll = jcache.NewLogger(os.Stderr)
+		}
+		l = ll
+	} else {
+		l = jcache.NewLogger(nil)
+	}
 }
 
 func main() {
@@ -116,17 +124,6 @@ func newCache(basePath string, compileFunc CompileFunc, osArgs ...string) (*jCac
 }
 
 type CompileFunc func(string, ...string) (string, string, int, error)
-
-var l jcache.Logger
-
-func init() {
-	ll, err := jcache.NewFileLogger(filepath.Join(basePath, "log.txt"))
-	if err != nil {
-		// well... just log to stderr
-		ll, err = jcache.NewLogger(os.Stderr)
-	}
-	l = ll
-}
 
 func (j *jCache) dOptionIndex() int {
 	for i, arg := range j.args.FlatArgs {
@@ -250,146 +247,73 @@ func (j *jCache) mainExitCode() (string, string, int, error) {
 }
 
 func (j *jCache) copyCachedFiles() (nFiles int, nBytes int64, err error) {
-	err = filepath.Walk(j.dstCachePath, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-
-		if info.IsDir() {
-			// continue walking.
-			return nil
-		}
-
-		if !info.Mode().IsRegular() {
-			return fmt.Errorf("file not regular: %s", path)
-		}
-
-		rel, err := filepath.Rel(j.dstCachePath, path)
-		if err != nil {
-			return err
-		}
-
-		dstPath := filepath.Join(j.args.DstDir, rel)
-
-		err = os.MkdirAll(filepath.Dir(dstPath), os.ModePerm)
-		if err != nil {
-			return err
-		}
-
-		source, err := os.Open(path)
-		if err != nil {
-			return err
-		}
-		defer source.Close()
-
-		destination, err := os.Create(dstPath)
-		if err != nil {
-			return err
-		}
-		defer destination.Close()
-
-		w, err := io.Copy(destination, source)
-		if err != nil {
-			return err
-		}
-
-		if w != info.Size() {
-			return fmt.Errorf("partial copy (%d/%d bytes): %s", w, info.Size(), path)
-		}
-
-		nBytes += w
-		nFiles++
-
-		return nil
-	})
-
-	return
-}
-
-func (j *jCache) copyCachedFilesParallel() (nFiles int, nBytes int64, err error) {
-	var from []string
-	var to []string
-
-	err = filepath.Walk(j.dstCachePath, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-
-		if info.IsDir() {
-			// continue walking.
-			return nil
-		}
-
-		if !info.Mode().IsRegular() {
-			return fmt.Errorf("file not regular: %s", path)
-		}
-
-		rel, err := filepath.Rel(j.dstCachePath, path)
-		if err != nil {
-			return err
-		}
-
-		dstPath := filepath.Join(j.args.DstDir, rel)
-		from = append(from, path)
-		to = append(to, dstPath)
-
-		return nil
-	})
-	if err != nil {
-		return 0, 0, err
-	}
-
-	length := len(from)
-	errs := make(chan error, length)
-	ns := make(chan int, length)
-	nbs := make(chan int64, length)
-	wg := sync.WaitGroup{}
-	wg.Add(length)
-
-	for i := 0; i < length; i++ {
-		f := from[i]
-		t := to[i]
-
-		go func() {
-			nBytes, err := cp(f, t)
+	err = filepath.Walk(
+		j.dstCachePath,
+		func(src string, srcInfo os.FileInfo, err error) error {
+			// abort walking on first error encountered
 			if err != nil {
-				errs <- err
-			} else {
-				ns <- 1
-				nbs <- nBytes
+				return err
 			}
-			wg.Done()
-		}()
-	}
 
-	wg.Wait()
+			if srcInfo.IsDir() {
+				return nil
+			}
+
+			if !srcInfo.Mode().IsRegular() {
+				return fmt.Errorf("file not regular: %s", src)
+			}
+
+			// construct fully qualified class name (JVM style)
+			fqcp, err := filepath.Rel(j.dstCachePath, src)
+			if err != nil {
+				return err
+			}
+
+			dst := filepath.Join(j.args.DstDir, fqcp)
+
+			if _, err := os.Stat(dst); err == nil {
+				if srcHash, err := jcache.Sha256File(src); err == nil {
+					if dstHash, err := jcache.Sha256File(dst); err == nil {
+						if srcHash == dstHash {
+							l.Info("skipping %s", src)
+							return nil
+						}
+					}
+				}
+			}
+
+			err = os.MkdirAll(filepath.Dir(dst), os.ModePerm)
+			if err != nil {
+				return err
+			}
+
+			w, err := jcache.CopyFile(src, dst)
+			if err != nil {
+				return err
+			}
+
+			if w != srcInfo.Size() {
+				return fmt.Errorf(
+					"partial copy (%d/%d bytes): %s",
+					w, srcInfo.Size(), src)
+			}
+
+			nBytes += w
+			nFiles++
+
+			return nil
+		})
 
 	return
-}
-
-func cp(from, to string) (int64, error) {
-	source, err := os.Open(from)
-	if err != nil {
-		return 0, err
-	}
-	defer source.Close()
-
-	destination, err := os.Create(to)
-	if err != nil {
-		return 0, err
-	}
-	defer destination.Close()
-
-	return io.Copy(destination, source)
 }
 
 func (j *jCache) needCompilation() bool {
-	if _, err := os.Stat(j.cachePath); os.IsNotExist(err) {
+	if jcache.DoesNotExist(j.cachePath) {
 		l.Info("cache-path does not exist")
 		return true
 	}
 
-	if _, err := os.Stat(j.sourceInfoPath); os.IsNotExist(err) {
+	if jcache.DoesNotExist(j.sourceInfoPath) {
 		l.Info("source-info-path does not exist")
 		return true
 	}
@@ -397,38 +321,30 @@ func (j *jCache) needCompilation() bool {
 	// see if any modified.....
 	infoSlice, err := jcache.UnmarshalSourceInfoSlice(j.sourceInfoPath)
 	if err != nil {
-		s := fmt.Sprintf("Failed to read source-info.json. Recompiling. %+v", err)
-		fmt.Fprint(os.Stderr, s)
-		l.Info(s)
+		l.Info("Failed to read source-info.json. Recompiling. %+v", err)
 		return true
 	}
 
 	for _, info := range infoSlice {
 		stat, err := os.Stat(info.Path)
 		if err != nil {
-			s := fmt.Sprintf("Failed to stat %s. Recompiling. %+v", info.Path, err)
-			fmt.Fprint(os.Stderr, s)
-			l.Info(s)
+			l.Info("Failed to stat %s. Recompiling. %+v", info.Path, err)
 			return true
 		}
 
-		if !stat.ModTime().UTC().Equal(info.ModTime.UTC()) {
-			s := fmt.Sprintf("Note: %s has been changed.\n"+
-				"      modified: %v\n"+
-				"      cached:   %v",
-				info.Path, stat.ModTime().UTC(), info.ModTime.UTC())
-			fmt.Fprint(os.Stderr, s)
-			l.Info(s)
+		tStat := stat.ModTime().UTC()
+		tInfo := info.ModTime.UTC()
+		if !tStat.Equal(tInfo) {
+			l.Info("%s has been changed. modified: %v - cached: %v",
+				info.Path, tStat, tInfo)
 
-			fileDigest, err := jcache.Sha256File(info.Path)
+			hash, err := jcache.Sha256File(info.Path)
 			if err != nil {
-				s := fmt.Sprintf("Failed to sha256-digest %s. Recompiling. %+v", info.Path, err)
-				fmt.Fprint(os.Stderr, s)
-				l.Info(s)
+				l.Info("Failed to sha256 sum %s. %+v", info.Path, err)
 				return true
 			}
 
-			if fileDigest == info.Sha256 {
+			if hash == info.Sha256 {
 				l.Info("Found identical digest. NOT recompiling.")
 				return false
 			}
