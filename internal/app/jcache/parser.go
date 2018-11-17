@@ -190,6 +190,7 @@ func (p *parser) computeUUID() error {
 
 	hash := sha256.New()
 	compilerModTime := ci.ModTime().Format(time.RFC3339)
+	hash.Write([]byte(p.compilerPath))
 	hash.Write([]byte(compilerModTime))
 
 	for _, arg := range p.flatArgs {

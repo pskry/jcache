@@ -118,7 +118,7 @@ func systemTest(t *testing.T, fqcn string, pStdout, pStderr func(string) (string
 		"-Xlint:all",
 		"-d", outDir,
 		"-h", incDir,
-		"../test/testdata/java/"+fqcn+".java",
+		"../../test/testdata/java/"+fqcn+".java",
 	)
 	panicOnErr(err)
 	info, err := jc.Execute()
@@ -160,7 +160,7 @@ func systemTest(t *testing.T, fqcn string, pStdout, pStderr func(string) (string
 		"-Xlint:all",
 		"-d", outDir,
 		"-h", incDir,
-		"../test/testdata/java/"+fqcn+".java",
+		"../../test/testdata/java/"+fqcn+".java",
 	)
 	panicOnErr(err)
 	info, err = jc.Execute()

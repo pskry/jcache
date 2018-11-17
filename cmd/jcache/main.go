@@ -1,23 +1,38 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"github.com/baeda/jcache/internal/app/jcache"
-	"github.com/pkg/errors"
 	"os"
 	"path/filepath"
 	"runtime/pprof"
+	"strconv"
 	"time"
 )
 
-const basePath = "/home/baeda/dev/go/src/github.com/baeda/jcache/.opt"
+var basePath string
+var verbose bool
 
-var enableLog = true
-var toRun = cli
+func init() {
+	basePath = os.Getenv("JCACHE_PATH")
+	v, err := strconv.ParseBool(os.Getenv("JCACHE_VERBOSE"))
+	if err != nil {
+		verbose = false
+	}
+	verbose = v
+}
 
 func main() {
+	evict := flag.Bool("e", false, "evict cache")
+	flag.Parse()
+	if *evict {
+		os.RemoveAll(basePath)
+		os.Exit(0)
+	}
+
 	now := time.Now()
-	err := toRun()
+	err := cli()
 	if err != nil {
 		panic(err)
 	}
@@ -29,7 +44,7 @@ func profile() error {
 	pprof.StartCPUProfile(file)
 	defer pprof.StopCPUProfile()
 
-	enableLog = false
+	verbose = false
 	x := 0
 	for i := 0; i < 5000; i++ {
 		info, err := entry()
@@ -69,7 +84,7 @@ func entry() (info *jcache.CompilerInfo, err error) {
 }
 
 func mkLogger() jcache.Logger {
-	if enableLog {
+	if verbose {
 		stdout := jcache.NewLogger(os.Stdout)
 		logger, err := jcache.NewFileLogger(filepath.Join(basePath, "log.txt"))
 		if err != nil {
@@ -82,29 +97,4 @@ func mkLogger() jcache.Logger {
 	} else {
 		return jcache.NewLogger(nil)
 	}
-}
-
-func clearAndRetryOnError(err error) {
-	if err == nil {
-		return
-	}
-
-	fmt.Printf("%+v", errors.WithStack(err))
-	fatalErr = err
-
-	reRun := toRun
-	toRun = fatal
-	if err := os.RemoveAll(basePath); err != nil {
-		fatal()
-	} else {
-		// rem went well.
-		// retry
-		reRun()
-	}
-}
-
-var fatalErr error
-
-func fatal() error {
-	panic(fatalErr)
 }

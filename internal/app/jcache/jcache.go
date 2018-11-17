@@ -87,7 +87,9 @@ func (j *jCache) execute() (info *CompilerInfo, err error) {
 	}
 
 	// here we'll just copy
+	copyStart := time.Now()
 	nFiles, nBytes, err := j.copyCachedFiles()
+	j.log.Info("copying files finished in %v", time.Since(copyStart))
 	if err != nil {
 		return
 	}
@@ -96,12 +98,10 @@ func (j *jCache) execute() (info *CompilerInfo, err error) {
 
 	if info == nil {
 		// load compiler-info from disk if we had a cache hit
-		start = time.Now()
 		info, err = UnmarshalCompilerInfo(j.compilerInfoPath)
 		if err != nil {
 			return
 		}
-		j.log.Info("copying files finished in %v", time.Since(start))
 	}
 	return
 }
@@ -117,15 +117,15 @@ func (j *jCache) compile() (info *CompilerInfo, err error) {
 		return
 	}
 
-	filename, err := j.writeArgsToTmpFile()
-	if err != nil {
-		return
-	}
-	defer os.Remove(filename) // not needed after javac command has finished
-
-	j.log.Info("%s %s\n", j.args.CompilerPath, "@"+filename)
 	start := time.Now()
-	ci, err := j.compileFunc(j.args.CompilerPath, "@"+filename)
+	var ci *CompilerInfo
+	if len(j.args.FlatArgs) == 0 {
+		// zero-arg invocation. we'll need to keep this as a special case
+		ci, err = j.compileNoArgs()
+	} else {
+		ci, err = j.compileWithArgs()
+	}
+
 	if err != nil {
 		return nil, err
 	}
@@ -139,15 +139,25 @@ func (j *jCache) compile() (info *CompilerInfo, err error) {
 
 	return ci, nil
 }
+func (j *jCache) compileWithArgs() (*CompilerInfo, error) {
+	filename, err := j.writeArgsToTmpFile()
+	if err != nil {
+		return nil, err
+	}
+	defer os.Remove(filename) // not needed after javac command has finished
+
+	j.log.Info("%s %s\n", j.args.CompilerPath, "@"+filename)
+	return j.compileFunc(j.args.CompilerPath, "@"+filename)
+}
+func (j *jCache) compileNoArgs() (*CompilerInfo, error) {
+	j.log.Info("%s\n", j.args.CompilerPath)
+	return j.compileFunc(j.args.CompilerPath)
+}
 func (j *jCache) writeArgsToTmpFile() (filename string, err error) {
 	repackedArgs := j.repackArgs()
 	return writeArgsToTmpFile(repackedArgs)
 }
 func (j *jCache) repackArgs() []string {
-	if len(j.args.FlatArgs) == 0 {
-		return j.args.OriginalArgs
-	}
-
 	repacked := j.args.FlatArgs
 	repacked = redirectArgOption(repacked, "-d", j.classesCachePath, true)
 	// adding -h changes the behaviour of javac (v1.8+). We don't want that
