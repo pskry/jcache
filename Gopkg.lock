@@ -2,14 +2,6 @@
 
 
 [[projects]]
-  branch = "master"
-  digest = "1:64636263e0b9c1a41dad76866f6db7f00ff883076fa903c82446ce9db453ea59"
-  name = "github.com/MichaelTJones/walk"
-  packages = ["."]
-  pruneopts = "NUT"
-  revision = "4748e29d5718c2df4028a6543edf86fd8cc0f881"
-
-[[projects]]
   digest = "1:a1578f7323eca2b88021fdc9a79a99833d40b12c32a5ea4f284e2fad19ea2657"
   name = "github.com/google/uuid"
   packages = ["."]
@@ -37,7 +29,6 @@
   analyzer-name = "dep"
   analyzer-version = 1
   input-imports = [
-    "github.com/MichaelTJones/walk",
     "github.com/google/uuid",
     "github.com/karrick/godirwalk",
     "github.com/pkg/errors",
