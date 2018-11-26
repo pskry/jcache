@@ -108,17 +108,17 @@ func systemTest(t *testing.T, fqcn string, pStdout, pStderr func(string) (string
 	// first run. must call compile
 	jc, err := jcache.NewCache(
 		cacheDir,
-		func(name string, args ...string) (info *jcache.CompilerInfo, err error) {
+		func(name string, args ...string) (info *jcache.ExecInfo, err error) {
 			compileCalled = true
 			return jcache.Command(name, args...)
 		},
 		jcache.NewLogger(os.Stdout),
-		"_$self",
-		"/usr/bin/javac",
-		"-Xlint:all",
-		"-d", outDir,
-		"-h", incDir,
-		"../../test/testdata/java/"+fqcn+".java",
+		asSlice("_$self",
+			"/usr/bin/javac",
+			"-Xlint:all",
+			"-d", outDir,
+			"-h", incDir,
+			"../../test/testdata/java/"+fqcn+".java"),
 	)
 	panicOnErr(err)
 	info, err := jc.Execute()
@@ -151,16 +151,16 @@ func systemTest(t *testing.T, fqcn string, pStdout, pStderr func(string) (string
 
 	jc, err = jcache.NewCache(
 		cacheDir,
-		func(name string, args ...string) (info *jcache.CompilerInfo, err error) {
+		func(name string, args ...string) (info *jcache.ExecInfo, err error) {
 			panic(fmt.Sprintf("compile called! %s(%v)", name, args))
 		},
 		jcache.NewLogger(os.Stdout),
-		"_$self",
-		"/usr/bin/javac",
-		"-Xlint:all",
-		"-d", outDir,
-		"-h", incDir,
-		"../../test/testdata/java/"+fqcn+".java",
+		asSlice("_$self",
+			"/usr/bin/javac",
+			"-Xlint:all",
+			"-d", outDir,
+			"-h", incDir,
+			"../../test/testdata/java/"+fqcn+".java"),
 	)
 	panicOnErr(err)
 	info, err = jc.Execute()
@@ -204,4 +204,8 @@ func panicOnErr(err error) {
 	if err != nil {
 		panic(err)
 	}
+}
+
+func asSlice(args ...string) []string {
+	return args
 }

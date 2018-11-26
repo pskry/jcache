@@ -6,7 +6,7 @@ import (
 	"syscall"
 )
 
-func Command(name string, args ...string) (*CompilerInfo, error) {
+func Command(name string, args ...string) (*ExecInfo, error) {
 	cmd := exec.Command(name, args...)
 
 	var outBuf bytes.Buffer
@@ -15,7 +15,7 @@ func Command(name string, args ...string) (*CompilerInfo, error) {
 	cmd.Stderr = &errBuf
 
 	err := cmd.Run()
-	info := &CompilerInfo{
+	info := &ExecInfo{
 		Stdout: outBuf.String(),
 		Stderr: errBuf.String(),
 	}

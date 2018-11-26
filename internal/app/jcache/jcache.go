@@ -19,10 +19,10 @@ type (
 		log              Logger
 		compileFunc      CompileFunc
 	}
-	CompileFunc func(string, ...string) (*CompilerInfo, error)
+	CompileFunc func(string, ...string) (*ExecInfo, error)
 )
 
-func NewCache(basePath string, compileFunc CompileFunc, logger Logger, osArgs ...string) (*jCache, error) {
+func NewCache(basePath string, compileFunc CompileFunc, logger Logger, osArgs []string) (*jCache, error) {
 	args, err := ParseArgs(osArgs)
 	if err != nil {
 		return nil, err
@@ -48,7 +48,7 @@ func NewCache(basePath string, compileFunc CompileFunc, logger Logger, osArgs ..
 	return jc, nil
 }
 
-func (j *jCache) Execute() (*CompilerInfo, error) {
+func (j *jCache) Execute() (*ExecInfo, error) {
 	ci, err := j.execute()
 	if err == nil {
 		return ci, nil
@@ -64,7 +64,7 @@ func (j *jCache) Execute() (*CompilerInfo, error) {
 	// TODO baeda - we probably want to run JUST javac. nothing altered, to ensure that we actually didn't mess anything up for people.
 	return j.execute()
 }
-func (j *jCache) execute() (info *CompilerInfo, err error) {
+func (j *jCache) execute() (info *ExecInfo, err error) {
 	executeStart := time.Now()
 
 	j.log.Info("%v", j.args.OriginalArgs)
@@ -98,7 +98,7 @@ func (j *jCache) execute() (info *CompilerInfo, err error) {
 
 	if info == nil {
 		// load compiler-info from disk if we had a cache hit
-		info, err = UnmarshalCompilerInfo(j.compilerInfoPath)
+		info, err = UnmarshalExecInfo(j.compilerInfoPath)
 		if err != nil {
 			return
 		}
@@ -106,7 +106,7 @@ func (j *jCache) execute() (info *CompilerInfo, err error) {
 	return
 }
 
-func (j *jCache) compile() (info *CompilerInfo, err error) {
+func (j *jCache) compile() (info *ExecInfo, err error) {
 	j.log.Info("cache miss")
 	j.log.Debug("unlink %s", j.cachePath)
 	os.RemoveAll(j.cachePath)
@@ -118,7 +118,7 @@ func (j *jCache) compile() (info *CompilerInfo, err error) {
 	}
 
 	start := time.Now()
-	var ci *CompilerInfo
+	var ci *ExecInfo
 	if len(j.args.FlatArgs) == 0 {
 		// zero-arg invocation. we'll need to keep this as a special case
 		ci, err = j.compileNoArgs()
@@ -132,14 +132,14 @@ func (j *jCache) compile() (info *CompilerInfo, err error) {
 
 	j.log.Info("javac finished in %v", time.Since(start))
 
-	err = MarshalCompilerInfo(ci, j.compilerInfoPath)
+	err = MarshalExecInfo(ci, j.compilerInfoPath)
 	if err != nil {
 		return nil, err
 	}
 
 	return ci, nil
 }
-func (j *jCache) compileWithArgs() (*CompilerInfo, error) {
+func (j *jCache) compileWithArgs() (*ExecInfo, error) {
 	filename, err := j.writeArgsToTmpFile()
 	if err != nil {
 		return nil, err
@@ -149,7 +149,7 @@ func (j *jCache) compileWithArgs() (*CompilerInfo, error) {
 	j.log.Info("%s %s\n", j.args.CompilerPath, "@"+filename)
 	return j.compileFunc(j.args.CompilerPath, "@"+filename)
 }
-func (j *jCache) compileNoArgs() (*CompilerInfo, error) {
+func (j *jCache) compileNoArgs() (*ExecInfo, error) {
 	j.log.Info("%s\n", j.args.CompilerPath)
 	return j.compileFunc(j.args.CompilerPath)
 }

@@ -1,18 +1,31 @@
-package jcache
+package main
 
 import (
 	"fmt"
-	"github.com/karrick/godirwalk"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 )
 
+func main() {
+	pwd, err := os.Getwd()
+	if err != nil {
+		log.Fatalln(err)
+	}
+
+	srcPath, err := filepath.Abs(os.Args[1])
+	if err != nil {
+		log.Fatalln(err)
+	}
+
+	copyAll(srcPath, filepath.Join(pwd, "jcp"))
+}
+
 func copyAll(srcPath, dstPath string) (nFiles int, nBytes int64, err error) {
-	err = godirwalk.Walk(srcPath, &godirwalk.Options{
-		FollowSymbolicLinks: true,
-		Unsorted:            true,
-		Callback: func(src string, srcInfo *godirwalk.Dirent) error {
+	err = filepath.Walk(
+		srcPath,
+		func(src string, srcInfo os.FileInfo, err error) error {
 			// abort walking on first error encountered
 			if err != nil {
 				return err
@@ -22,7 +35,7 @@ func copyAll(srcPath, dstPath string) (nFiles int, nBytes int64, err error) {
 				return nil
 			}
 
-			if !srcInfo.IsRegular() {
+			if !srcInfo.Mode().IsRegular() {
 				return fmt.Errorf("file not regular: %s", src)
 			}
 
@@ -47,12 +60,17 @@ func copyAll(srcPath, dstPath string) (nFiles int, nBytes int64, err error) {
 				return err
 			}
 
+			if w != srcInfo.Size() {
+				return fmt.Errorf(
+					"partial copy (%d/%d bytes): %s",
+					w, srcInfo.Size(), src)
+			}
+
 			nBytes += w
 			nFiles++
 
 			return nil
-		},
-	})
+		})
 
 	return
 }

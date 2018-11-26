@@ -6,9 +6,8 @@ import (
 	"github.com/baeda/jcache/internal/app/jcache"
 	"os"
 	"path/filepath"
-	"runtime/pprof"
+	"runtime"
 	"strconv"
-	"time"
 )
 
 var basePath string
@@ -24,6 +23,8 @@ func init() {
 }
 
 func main() {
+	runtime.GOMAXPROCS(runtime.NumCPU() * 2)
+
 	evict := flag.Bool("e", false, "evict cache")
 	flag.Parse()
 	if *evict {
@@ -31,35 +32,28 @@ func main() {
 		os.Exit(0)
 	}
 
-	now := time.Now()
-	err := cli()
+	err := runAsCompilerFacade(os.Args)
 	if err != nil {
 		panic(err)
 	}
-	fmt.Fprintf(os.Stderr, "\n\nTIME: %v\n", time.Since(now))
 }
-func profile() error {
-	os.MkdirAll(basePath, os.ModePerm)
-	file, _ := os.Create(filepath.Join(basePath, "cpu.prof"))
-	pprof.StartCPUProfile(file)
-	defer pprof.StopCPUProfile()
 
-	verbose = false
-	x := 0
-	for i := 0; i < 5000; i++ {
-		info, err := entry()
-		if err != nil {
-			return err
-		}
-		x += len(info.Stdout) + len(info.Stderr) + info.Exit
-		i++
+func runAsStandalone() {
+
+}
+
+func runAsCompilerFacade(args []string) error {
+	jc, err := jcache.NewCache(
+		basePath,
+		jcache.Command,
+		mkLogger(),
+		args,
+	)
+	if err != nil {
+		return err
 	}
-	fmt.Println(x)
 
-	return nil
-}
-func cli() error {
-	info, err := entry()
+	info, err := jc.Execute()
 	if err != nil {
 		return err
 	}
@@ -69,18 +63,6 @@ func cli() error {
 	os.Exit(info.Exit)
 
 	return nil
-}
-func entry() (info *jcache.CompilerInfo, err error) {
-	jc, err := jcache.NewCache(
-		basePath,
-		jcache.Command,
-		mkLogger(),
-		os.Args...,
-	)
-	if err != nil {
-		return nil, err
-	}
-	return jc.Execute()
 }
 
 func mkLogger() jcache.Logger {

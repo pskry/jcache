@@ -4,26 +4,26 @@ import (
 	"os"
 )
 
-type CompilerInfo struct {
+type ExecInfo struct {
 	Stdout string
 	Stderr string
 	Exit   int
 }
 
-func UnmarshalCompilerInfo(path string) (info *CompilerInfo, err error) {
+func UnmarshalExecInfo(path string) (info *ExecInfo, err error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return
 	}
 	defer file.Close()
 
-	info = &CompilerInfo{}
+	info = &ExecInfo{}
 	dec := NewDecoder(file)
 	err = dec.Decode(info)
 	return
 }
 
-func MarshalCompilerInfo(info *CompilerInfo, path string) error {
+func MarshalExecInfo(info *ExecInfo, path string) error {
 	file, err := os.Create(path)
 	if err != nil {
 		return err
