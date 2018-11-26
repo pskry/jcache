@@ -3,19 +3,93 @@ package jcache
 import (
 	"encoding/json"
 	"io"
+	"os"
+	"time"
 )
 
-type EncoderFacade interface{ Encode(v interface{}) error }
-type DecoderFacade interface{ Decode(v interface{}) error }
+type (
+	EncoderFacade interface{ Encode(v interface{}) error }
+	DecoderFacade interface{ Decode(v interface{}) error }
 
-var NewEncoder = func(w io.Writer) EncoderFacade {
+	FileInfo struct {
+		Path    string
+		ModTime time.Time
+		Sha256  string
+	}
+)
+
+func NewEncoder(w io.Writer) EncoderFacade {
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	return enc
 }
-
-var NewDecoder = func(w io.Reader) DecoderFacade {
+func NewDecoder(w io.Reader) DecoderFacade {
 	dec := json.NewDecoder(w)
 	dec.DisallowUnknownFields()
 	return dec
+}
+
+func MarshalExecInfo(info *ExecInfo, path string) error {
+	file, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	enc := NewEncoder(file)
+	return enc.Encode(info)
+}
+func UnmarshalExecInfo(path string) (info *ExecInfo, err error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return
+	}
+	defer file.Close()
+
+	info = &ExecInfo{}
+	dec := NewDecoder(file)
+	err = dec.Decode(info)
+	return
+}
+
+func MarshalFileInfoSlice(paths []string, outFile string) error {
+	file, err := os.Create(outFile)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	var infoSlice []FileInfo
+	for _, src := range paths {
+		stat, err := os.Stat(src)
+		if err != nil {
+			return err
+		}
+
+		fileDigest, err := Sha256File(src)
+		if err != nil {
+			return err
+		}
+
+		info := FileInfo{
+			Path:    src,
+			ModTime: stat.ModTime().UTC(),
+			Sha256:  fileDigest,
+		}
+		infoSlice = append(infoSlice, info)
+	}
+
+	enc := NewEncoder(file)
+	return enc.Encode(infoSlice)
+}
+func UnmarshalFileInfoSlice(path string) (infoSlice []FileInfo, err error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return
+	}
+	defer file.Close()
+
+	dec := NewDecoder(file)
+	err = dec.Decode(&infoSlice)
+	return
 }

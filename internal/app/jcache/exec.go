@@ -6,6 +6,12 @@ import (
 	"syscall"
 )
 
+type ExecInfo struct {
+	Stdout string
+	Stderr string
+	Exit   int
+}
+
 func Command(name string, args ...string) (*ExecInfo, error) {
 	cmd := exec.Command(name, args...)
 
