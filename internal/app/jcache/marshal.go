@@ -2,6 +2,7 @@ package jcache
 
 import (
 	"encoding/json"
+	"github.com/pkg/errors"
 	"io"
 	"os"
 	"time"
@@ -32,7 +33,7 @@ func NewDecoder(w io.Reader) DecoderFacade {
 func MarshalExecInfo(info *ExecInfo, path string) error {
 	file, err := os.Create(path)
 	if err != nil {
-		return err
+		return errors.WithStack(err)
 	}
 	defer file.Close()
 
@@ -55,7 +56,7 @@ func UnmarshalExecInfo(path string) (info *ExecInfo, err error) {
 func MarshalFileInfoSlice(paths []string, outFile string) error {
 	file, err := os.Create(outFile)
 	if err != nil {
-		return err
+		return errors.WithStack(err)
 	}
 	defer file.Close()
 
@@ -63,12 +64,12 @@ func MarshalFileInfoSlice(paths []string, outFile string) error {
 	for _, src := range paths {
 		stat, err := os.Stat(src)
 		if err != nil {
-			return err
+			return errors.WithStack(err)
 		}
 
 		fileDigest, err := Sha256File(src)
 		if err != nil {
-			return err
+			return errors.WithStack(err)
 		}
 
 		info := FileInfo{

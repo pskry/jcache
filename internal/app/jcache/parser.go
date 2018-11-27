@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"github.com/pkg/errors"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -11,7 +12,7 @@ import (
 	"time"
 )
 
-const MinArgs int = 2
+const MinArgs int = 1
 
 type (
 	parser struct {
@@ -69,12 +70,12 @@ func (p *parser) parse(osArgs []string) error {
 	}
 
 	if err := p.parseCompilerPath(osArgs); err != nil {
-		return err
+		return errors.WithStack(err)
 	}
 
 	p.parseCompilerArgs(osArgs)
 	if err := p.flattenArgs(); err != nil {
-		return err
+		return errors.WithStack(err)
 	}
 
 	p.findSourcePaths()
@@ -83,21 +84,21 @@ func (p *parser) parse(osArgs []string) error {
 	p.incDir = p.findValueForOption("-h")
 	p.genDir = p.findValueForOption("-s")
 	if err := p.computeUUID(); err != nil {
-		return err
+		return errors.WithStack(err)
 	}
 
 	return nil
 }
 
 func (p *parser) parseCompilerPath(osArgs []string) error {
-	cp := osArgs[1]
+	cp := osArgs[0]
 	if _, err := os.Stat(cp); err != nil {
-		return err
+		return errors.WithStack(err)
 	}
 
 	cp, err := filepath.EvalSymlinks(cp)
 	if err != nil {
-		return err
+		return errors.WithStack(err)
 	}
 
 	p.compilerPath = cp
@@ -129,7 +130,7 @@ func (p *parser) flattenArgs() error {
 			filePath := arg[1:]
 			data, err := ioutil.ReadFile(filePath)
 			if err != nil {
-				return err
+				return errors.WithStack(err)
 			}
 
 			for _, field := range strings.Fields(string(data)) {
@@ -185,7 +186,7 @@ func (p *parser) findValueForOption(option string) string {
 func (p *parser) computeUUID() error {
 	ci, err := os.Stat(p.compilerPath)
 	if err != nil {
-		return err
+		return errors.WithStack(err)
 	}
 
 	hash := sha256.New()

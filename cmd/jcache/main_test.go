@@ -113,8 +113,7 @@ func systemTest(t *testing.T, fqcn string, pStdout, pStderr func(string) (string
 			return jcache.Command(name, args...)
 		},
 		jcache.NewLogger(os.Stdout),
-		asSlice("_$self",
-			"/usr/bin/javac",
+		asSlice("/usr/bin/javac",
 			"-Xlint:all",
 			"-d", outDir,
 			"-h", incDir,
@@ -155,8 +154,7 @@ func systemTest(t *testing.T, fqcn string, pStdout, pStderr func(string) (string
 			panic(fmt.Sprintf("compile called! %s(%v)", name, args))
 		},
 		jcache.NewLogger(os.Stdout),
-		asSlice("_$self",
-			"/usr/bin/javac",
+		asSlice("/usr/bin/javac",
 			"-Xlint:all",
 			"-d", outDir,
 			"-h", incDir,

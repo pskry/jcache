@@ -258,29 +258,29 @@ func (j *jCache) anyFileNotExists(filenames ...string) bool {
 func (j *jCache) mkDirs() error {
 	err := os.MkdirAll(j.classesCachePath, os.ModePerm)
 	if err != nil {
-		return err
+		return errors.WithStack(err)
 	}
 	err = os.MkdirAll(j.includeCachePath, os.ModePerm)
 	if err != nil {
-		return err
+		return errors.WithStack(err)
 	}
 
 	if j.args.DstDir != "" {
 		err = os.MkdirAll(j.args.DstDir, os.ModePerm)
 		if err != nil {
-			return err
+			return errors.WithStack(err)
 		}
 	}
 	if j.args.IncDir != "" {
 		err = os.MkdirAll(j.args.IncDir, os.ModePerm)
 		if err != nil {
-			return err
+			return errors.WithStack(err)
 		}
 	}
 	if j.args.GenDir != "" {
 		err = os.MkdirAll(j.args.GenDir, os.ModePerm)
 		if err != nil {
-			return err
+			return errors.WithStack(err)
 		}
 	}
 
