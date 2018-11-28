@@ -18,14 +18,6 @@
   version = "v1.7.5"
 
 [[projects]]
-  digest = "1:f0cd46f56bce290a4eb03cab974087949d1b5c17142374fb07d3bec00b8acdfd"
-  name = "github.com/karrick/golf"
-  packages = ["."]
-  pruneopts = "NUT"
-  revision = "beaf3a01d6e6b50058c56e49a358caa07484b642"
-  version = "v1.1.0"
-
-[[projects]]
   digest = "1:5cf3f025cbee5951a4ee961de067c8a89fc95a5adabead774f82822efabab121"
   name = "github.com/pkg/errors"
   packages = ["."]
@@ -39,7 +31,6 @@
   input-imports = [
     "github.com/google/uuid",
     "github.com/karrick/godirwalk",
-    "github.com/karrick/golf",
     "github.com/pkg/errors",
   ]
   solver-name = "gps-cdcl"

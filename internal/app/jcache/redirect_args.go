@@ -44,7 +44,6 @@ func writeArgsToTmpFile(args []string) (filename string, err error) {
 	filename = file.Name()
 
 	for _, arg := range args {
-		//file.WriteString("\"" + arg + "\"\n")
 		file.WriteString(arg + "\n")
 	}
 
