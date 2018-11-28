@@ -10,7 +10,7 @@ go:
 matrix:
   include:
     - os: windows
-      install: cocho install openjdk
+      install: choco install openjdk
 
 script:
   - javac -version
