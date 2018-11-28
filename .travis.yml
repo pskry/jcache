@@ -9,15 +9,12 @@ go:
   - "1.x"
 
 jdk:
-  - openjdk8
-#
-#before_install:
-#  - wget https://github.com/sormuras/bach/raw/master/install-jdk.sh
-#
-#matrix:
-#  include:
-#    - env: JDK='OpenJDK 10'
-#      install: . ./install-jdk.sh -F 10 -L GPL
+  - openjdk10
+
+matrix:
+  include:
+  - os: windows
+    jdk: openjdk10
 
 script:
   - javac -version
