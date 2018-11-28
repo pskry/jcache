@@ -1,20 +1,16 @@
 language: go
 
 os:
-  - windows
   - linux
   - osx
 
 go:
   - "1.x"
 
-jdk:
-  - openjdk10
-
 matrix:
   include:
-  - os: windows
-    jdk: openjdk10
+    - os: windows
+      install: cocho install openjdk
 
 script:
   - javac -version
