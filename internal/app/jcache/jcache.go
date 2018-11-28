@@ -4,6 +4,7 @@ import (
 	"github.com/pkg/errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
@@ -155,6 +156,7 @@ func (j *jCache) compileNoArgs() (*ExecInfo, error) {
 }
 func (j *jCache) writeArgsToTmpFile() (filename string, err error) {
 	repackedArgs := j.repackArgs()
+	j.log.Info("REPACKED ARGS::\n\n%s\n", strings.Join(repackedArgs, "\n"))
 	return writeArgsToTmpFile(repackedArgs)
 }
 func (j *jCache) repackArgs() []string {
