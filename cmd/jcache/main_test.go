@@ -6,6 +6,7 @@ import (
 	"github.com/baeda/jcache/internal/app/jcache"
 	"io/ioutil"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -113,7 +114,7 @@ func systemTest(t *testing.T, fqcn string, pStdout, pStderr func(string) (string
 			return jcache.Command(name, args...)
 		},
 		jcache.NewLogger(os.Stdout),
-		asSlice("/usr/bin/javac",
+		asSlice(findJavac(),
 			"-Xlint:all",
 			"-d", outDir,
 			"-h", incDir,
@@ -154,7 +155,7 @@ func systemTest(t *testing.T, fqcn string, pStdout, pStderr func(string) (string
 			panic(fmt.Sprintf("compile called! %s(%v)", name, args))
 		},
 		jcache.NewLogger(os.Stdout),
-		asSlice("/usr/bin/javac",
+		asSlice(findJavac(),
 			"-Xlint:all",
 			"-d", outDir,
 			"-h", incDir,
@@ -206,4 +207,10 @@ func panicOnErr(err error) {
 
 func asSlice(args ...string) []string {
 	return args
+}
+
+func findJavac() string {
+	path, err := exec.LookPath("javac")
+	panicOnErr(err)
+	return path
 }
