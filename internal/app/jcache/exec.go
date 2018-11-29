@@ -12,6 +12,10 @@ type ExecInfo struct {
 	Exit   int
 }
 
+func (e ExecInfo) Combined() string {
+	return e.Stdout + e.Stderr
+}
+
 func Command(name string, args ...string) (*ExecInfo, error) {
 	cmd := exec.Command(name, args...)
 

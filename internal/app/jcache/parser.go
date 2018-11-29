@@ -38,12 +38,16 @@ type (
 		GenDir       string
 		UUID         string
 	}
+	ErrCompilerNotFound struct {
+		error
+		Path string
+	}
 )
 
-func ParseArgs(osArgs []string) (ParsedArgs, error) {
+func ParseArgs(args []string) (ParsedArgs, error) {
 	p := parser{}
 	if !p.parsed {
-		if err := p.parse(osArgs); err != nil {
+		if err := p.parse(args); err != nil {
 			return ParsedArgs{}, err
 		}
 		p.parsed = true
@@ -64,16 +68,16 @@ func ParseArgs(osArgs []string) (ParsedArgs, error) {
 	return pa, nil
 }
 
-func (p *parser) parse(osArgs []string) error {
-	if len(osArgs) < MinArgs {
+func (p *parser) parse(args []string) error {
+	if len(args) < MinArgs {
 		return fmt.Errorf("invalid argument length")
 	}
 
-	if err := p.parseCompilerPath(osArgs); err != nil {
+	if err := p.parseCompilerPath(args); err != nil {
 		return errors.WithStack(err)
 	}
 
-	p.parseCompilerArgs(osArgs)
+	p.parseCompilerArgs(args)
 	if err := p.flattenArgs(); err != nil {
 		return errors.WithStack(err)
 	}
@@ -90,10 +94,17 @@ func (p *parser) parse(osArgs []string) error {
 	return nil
 }
 
-func (p *parser) parseCompilerPath(osArgs []string) error {
-	cp := osArgs[0]
+func (p *parser) parseCompilerPath(args []string) error {
+	cp := args[0]
 	if _, err := os.Stat(cp); err != nil {
-		return errors.WithStack(err)
+		// Unwrap os.PathError
+		if pe, ok := err.(*os.PathError); ok {
+			err = pe.Err
+		}
+		return ErrCompilerNotFound{
+			error: errors.WithStack(err),
+			Path:  cp,
+		}
 	}
 
 	cp, err := filepath.EvalSymlinks(cp)
@@ -105,13 +116,13 @@ func (p *parser) parseCompilerPath(osArgs []string) error {
 	return nil
 }
 
-func (p *parser) parseCompilerArgs(osArgs []string) {
-	args := make([]string, len(osArgs)-MinArgs)
-	for i := MinArgs; i < len(osArgs); i++ {
-		args[i-MinArgs] = cleanArg(osArgs[i])
+func (p *parser) parseCompilerArgs(args []string) {
+	orig := make([]string, len(args)-MinArgs)
+	for i := MinArgs; i < len(args); i++ {
+		orig[i-MinArgs] = cleanArg(args[i])
 	}
 
-	p.originalArgs = args
+	p.originalArgs = orig
 }
 
 func (p *parser) flattenArgs() error {

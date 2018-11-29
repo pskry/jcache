@@ -26,7 +26,11 @@ type (
 func NewCache(basePath string, compileFunc CompileFunc, logger Logger, osArgs []string) (*jCache, error) {
 	args, err := ParseArgs(osArgs)
 	if err != nil {
-		return nil, err
+		return nil, errors.WithStack(err)
+	}
+
+	if err = validateCompiler(args.CompilerPath); err != nil {
+		return nil, errors.WithStack(err)
 	}
 
 	cachePath := filepath.Join(basePath, args.UUID)

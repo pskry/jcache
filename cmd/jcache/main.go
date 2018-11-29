@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"github.com/baeda/jcache/internal/app/jcache"
+	"github.com/pkg/errors"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -25,13 +26,14 @@ Copyright (c) 2018 Peter Skrypalle
 <my chosen license>
 `
 
-const ErrorText = `%[1]s: %[2]v
+const ErrorText = `%[1]s: %[2]v`
+const CliErrorText = ErrorText + `
 Try '%[1]s --help' for more information.
 `
 
 const (
 	ExitSuccess = iota
-	ExitErrFlag
+	ExitErrCli
 	ExitErr
 )
 
@@ -45,6 +47,12 @@ type CLI struct {
 
 func init() {
 	basePath = os.Getenv("JCACHE_PATH")
+	if basePath == "" {
+		basePath = filepath.Dir(os.Args[0])
+	}
+	if abs, err := filepath.Abs(basePath); err == nil {
+		basePath = abs
+	}
 	v, err := strconv.ParseBool(os.Getenv("JCACHE_VERBOSE"))
 	if err != nil {
 		verbose = false
@@ -75,6 +83,7 @@ func mainExitCode() int {
 	fs.SetOutput(ioutil.Discard)
 
 	// Setup our flags; excluding -h, --help which comes for free
+	// Usage strings are empty. We are only interested in flag parsing.
 	cli := CLI{}
 	fs.BoolVar(&cli.clear, "c", false, "")
 	fs.BoolVar(&cli.clear, "clear", false, "")
@@ -89,8 +98,8 @@ func mainExitCode() int {
 			return ExitSuccess
 		}
 
-		fmt.Fprintf(os.Stderr, ErrorText, os.Args[0], err)
-		return ExitErrFlag
+		fmt.Fprintf(os.Stderr, CliErrorText, os.Args[0], err)
+		return ExitErrCli
 	}
 
 	if cli.version {
@@ -103,15 +112,40 @@ func mainExitCode() int {
 		// Clear cache before running
 		err = os.RemoveAll(basePath)
 		if err != nil {
+			message := fmt.Sprintf(
+				"failed to clear cache directory '%s' - %v", basePath, err)
 			fmt.Fprintf(os.Stderr,
-				"Error clearing cache dir '%s': %+v\n", basePath, err)
+				ErrorText, os.Args[0], message)
 			return ExitErr
 		}
 	}
 
-	exit, err := jCache(fs.Args())
+	args := fs.Args()
+	if len(args) < 1 {
+		if cli.clear {
+			// Clearing cache is a valid terminal operation.
+			return ExitSuccess
+		}
+
+		fmt.Fprintf(os.Stderr, CliErrorText, os.Args[0],
+			"missing compiler to run")
+		return ExitErrCli
+	}
+
+	exit, err := jCache(args)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "%+v", err)
+		cause := errors.Cause(err)
+		switch ex := cause.(type) {
+		case jcache.ErrCompilerNotFound:
+			message := fmt.Sprintf("cannot run '%s': %v", ex.Path, ex)
+			fmt.Fprintf(os.Stderr, ErrorText, os.Args[0], message)
+		case jcache.ErrInvalidCompiler:
+			message := fmt.Sprintf("invalid compiler '%s': %v\n%v",
+				ex.Path, ex, ex.CombinedOut)
+			fmt.Fprintf(os.Stderr, ErrorText, os.Args[0], message)
+		default:
+			fmt.Fprintf(os.Stderr, "unexpected error: %+v", err)
+		}
 		return ExitErr
 	}
 
