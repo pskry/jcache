@@ -134,22 +134,26 @@ func mainExitCode() int {
 
 	exit, err := jCache(args)
 	if err != nil {
-		cause := errors.Cause(err)
-		switch ex := cause.(type) {
-		case jcache.ErrCompilerNotFound:
-			message := fmt.Sprintf("cannot run '%s': %v", ex.Path, ex)
-			fmt.Fprintf(os.Stderr, ErrorText, os.Args[0], message)
-		case jcache.ErrInvalidCompiler:
-			message := fmt.Sprintf("invalid compiler '%s': %v\n%v",
-				ex.Path, ex, ex.CombinedOut)
-			fmt.Fprintf(os.Stderr, ErrorText, os.Args[0], message)
-		default:
-			fmt.Fprintf(os.Stderr, "unexpected error: %+v", err)
-		}
-		return ExitErr
+		return handleCacheError(err)
 	}
 
 	return exit
+}
+
+func handleCacheError(err error) int {
+	cause := errors.Cause(err)
+	switch ex := cause.(type) {
+	case jcache.ErrCompilerNotFound:
+		message := fmt.Sprintf("cannot run '%s': %v", ex.Path, ex)
+		fmt.Fprintf(os.Stderr, ErrorText, os.Args[0], message)
+	case jcache.ErrInvalidCompiler:
+		message := fmt.Sprintf("invalid compiler '%s': %v\n%v", ex.Path, ex, ex.CombinedOut)
+		fmt.Fprintf(os.Stderr, ErrorText, os.Args[0], message)
+	default:
+		fmt.Fprintf(os.Stderr, "unexpected error: %+v", err)
+	}
+
+	return ExitErr
 }
 
 func jCache(args []string) (int, error) {
