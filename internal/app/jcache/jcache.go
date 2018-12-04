@@ -29,10 +29,6 @@ func NewCache(basePath string, compileFunc CompileFunc, logger Logger, osArgs []
 		return nil, errors.WithStack(err)
 	}
 
-	if err = validateCompiler(args.CompilerPath); err != nil {
-		return nil, errors.WithStack(err)
-	}
-
 	cachePath := filepath.Join(basePath, args.UUID)
 	classesCachePath := filepath.Join(cachePath, "classes")
 	includeCachePath := filepath.Join(cachePath, "include")
@@ -53,23 +49,7 @@ func NewCache(basePath string, compileFunc CompileFunc, logger Logger, osArgs []
 	return jc, nil
 }
 
-func (j *jCache) Execute() (*ExecInfo, error) {
-	ci, err := j.execute()
-	if err == nil {
-		return ci, nil
-	}
-
-	j.log.Info("Something went wrong here!")
-	j.log.Info("%+v", errors.WithStack(err))
-
-	// clear my cache and re-compile
-	if e := os.RemoveAll(j.cachePath); e != nil {
-		return nil, err // ret original error
-	}
-	// TODO baeda - we probably want to run JUST javac. nothing altered, to ensure that we actually didn't mess anything up for people.
-	return j.execute()
-}
-func (j *jCache) execute() (info *ExecInfo, err error) {
+func (j *jCache) Execute() (info *ExecInfo, err error) {
 	executeStart := time.Now()
 
 	j.log.Info("%v", j.args.OriginalArgs)
@@ -112,6 +92,10 @@ func (j *jCache) execute() (info *ExecInfo, err error) {
 }
 
 func (j *jCache) compile() (info *ExecInfo, err error) {
+	if err = validateCompiler(j.args.CompilerPath); err != nil {
+		return nil, errors.WithStack(err)
+	}
+
 	j.log.Info("cache miss")
 	j.log.Debug("unlink %s", j.cachePath)
 	os.RemoveAll(j.cachePath)

@@ -14,7 +14,7 @@ import (
 const UsageText = `Usage: %s [options] COMPILER [compiler options]
 
 Options:
-    -c, --clear          clear the cache completely (except configuration)
+    -c, --clear          clear the cache completely
 
     -h, --help           print this help text and exit
     -v, --version        print version and copyright information and exit
@@ -134,23 +134,32 @@ func mainExitCode() int {
 
 	exit, err := jCache(args)
 	if err != nil {
-		return handleCacheError(err)
+		return handleCacheError(args, err)
 	}
 
 	return exit
 }
 
-func handleCacheError(err error) int {
+func handleCacheError(args []string, err error) int {
 	cause := errors.Cause(err)
 	switch ex := cause.(type) {
 	case jcache.ErrCompilerNotFound:
 		message := fmt.Sprintf("cannot run '%s': %v", ex.Path, ex)
-		fmt.Fprintf(os.Stderr, ErrorText, os.Args[0], message)
+		fmt.Fprintf(os.Stderr, ErrorText, args[0], message)
 	case jcache.ErrInvalidCompiler:
 		message := fmt.Sprintf("invalid compiler '%s': %v\n%v", ex.Path, ex, ex.CombinedOut)
-		fmt.Fprintf(os.Stderr, ErrorText, os.Args[0], message)
+		fmt.Fprintf(os.Stderr, ErrorText, args[0], message)
 	default:
-		fmt.Fprintf(os.Stderr, "unexpected error: %+v", err)
+		fmt.Fprintf(os.Stderr, "unexpected error: %+v\n", err)
+		// here we know that at least we have a valid compiler; execute that
+		exit, cmdErr := runBackup(args)
+		if cmdErr != nil {
+			// oh boy, backup run has failed.
+			// there's nothing more we can do. panic.
+			panic(cmdErr)
+		}
+
+		return exit
 	}
 
 	return ExitErr
@@ -160,7 +169,7 @@ func jCache(args []string) (int, error) {
 	jc, err := jcache.NewCache(
 		basePath,
 		jcache.Command,
-		mkLogger(),
+		initLogger(),
 		args,
 	)
 	if err != nil {
@@ -179,18 +188,37 @@ func jCache(args []string) (int, error) {
 	return info.Exit, nil
 }
 
-func mkLogger() jcache.Logger {
-	if verbose {
-		stdout := jcache.NewLogger(os.Stdout)
-		logger, err := jcache.NewFileLogger(filepath.Join(basePath, "log.txt"))
-		if err != nil {
-			// well... just log to stdout
-			logger = stdout
-		} else {
-			logger = jcache.NewLoggerChain(logger, stdout)
-		}
-		return logger
-	} else {
-		return jcache.NewLogger(nil)
+func initLogger() jcache.Logger {
+	if !verbose {
+		return jcache.NewLogger(ioutil.Discard)
 	}
+
+	stdout := jcache.NewLogger(os.Stdout)
+	logger, err := jcache.NewFileLogger(filepath.Join(basePath, "log.txt"))
+	if err != nil {
+		// well... just log to stdout
+		logger = stdout
+	} else {
+		logger = jcache.NewLoggerChain(logger, stdout)
+	}
+	return logger
+}
+
+func runBackup(args []string) (int, error) {
+	cmd := args[0]
+	var cmdArgs []string
+	if len(args) > 1 {
+		cmdArgs = args[1:]
+	}
+
+	info, err := jcache.Command(cmd, cmdArgs...)
+	if err != nil {
+		return ExitErr, errors.WithStack(err)
+	}
+
+	// Replay javac output
+	fmt.Fprint(os.Stdout, info.Stdout)
+	fmt.Fprint(os.Stderr, info.Stderr)
+
+	return info.Exit, nil
 }
